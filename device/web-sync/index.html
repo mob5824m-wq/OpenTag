@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11151c">
+  <title>OpenTag · Sync</title>
+  <style>
+    :root{color-scheme:dark;--bg:#11151c;--panel:#1b212b;--line:#303a49;--text:#f4f6f8;--muted:#9ba7b7;--mint:#b6f36a;--violet:#bba8ff;--bad:#ff8b8b}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(800px 500px at 90% -10%,#28334b 0,transparent 65%),var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;min-height:100vh}
+    main{max-width:880px;margin:auto;padding:28px 18px 56px}.brand{display:flex;align-items:center;gap:12px;margin:4px 0 30px}.mark{background:var(--mint);color:#10131b;width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-weight:900;font-size:20px}.brand strong{font-size:20px;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);letter-spacing:1.5px;font-size:10px;font-weight:700}
+    h1{font-size:clamp(30px,7vw,47px);line-height:1.06;letter-spacing:-1.7px;margin:0 0 12px}.lede{color:var(--muted);max-width:630px;margin:0 0 24px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.card{background:linear-gradient(145deg,#202735,#1a2029);border:1px solid #2b3442;border-radius:22px;padding:20px;margin:16px 0}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#697789}.dot.ok{background:var(--mint);box-shadow:0 0 14px #b6f36a77}.dot.err{background:var(--bad)}
+    button,.filebtn{border:0;border-radius:13px;padding:12px 16px;background:var(--mint);color:#10131b;font-weight:750;cursor:pointer;font:inherit;font-size:13px}button.secondary,.filebtn{background:#2a3341;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:7px;flex:1;min-width:210px}.field label{font-size:12px;color:var(--muted);font-weight:650}input,select{width:100%;border:1px solid var(--line);background:#111720;color:var(--text);border-radius:12px;padding:12px 13px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--mint)}.sub{font-size:12px;color:var(--muted)}
+    .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px}
+    .notice{font-size:12px;color:var(--muted);border-left:3px solid var(--violet);padding:3px 0 3px 12px;margin:13px 0}.warning{color:#ffcc9b}.rule{height:1px;background:#2b3442;margin:17px 0}.foot{font-size:11px;color:var(--muted);max-width:700px;margin:22px 0 0}.hidden{display:none!important}
+  </style>
+</head>
+<body><main>
+  <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
+  <h1>Your notes,<br>ready to tap.</h1>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE. The device can write standard NDEF records to a supported NTAG215. It does not accept tag images or proprietary data files.</p>
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
+    <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
+    <div class="notice">This page sends only the selected text or URL note. It never reads or imports raw NFC tag memory.</div>
+  </section>
+  <section class="card">
+    <strong>Add a note</strong><p class="sub">Only ordinary text and HTTP(S) URLs are supported. Maximum 200 UTF-8 bytes.</p>
+    <form id="addForm"><div class="row"><div class="field"><label for="kind">Record type</label><select id="kind"><option value="TEXT">Text</option><option value="URL">Web URL</option></select></div><div class="field" style="flex:3"><label for="value">Content</label><input id="value" maxlength="200" required placeholder="A short note or https://example.com"></div><button type="submit">Add to library</button></div></form>
+    <div class="row" style="margin-top:15px"><button id="export" class="secondary">Export notes JSON</button><label class="filebtn" for="importFile">Import notes JSON</label><input id="importFile" class="hidden" type="file" accept=".json,application/json"></div>
+    <p class="sub warning">Binary tag dumps (.bin), encrypted data, and arbitrary file uploads are intentionally unsupported.</p>
+    <div id="library" class="library"></div>
+  </section>
+  <section class="card"><strong>Device response</strong><p id="response" class="sub">Connect to OpenTag to sync a note.</p></section>
+  <p class="foot">OpenTag is an independent open-source project. NFC write operations replace the existing user NDEF area on the selected NTAG215. Confirm on the device before writing; always use tags you own or are authorized to program.</p>
+</main>
+<script>
+(() => {
+  const SERVICE = '9b9e0001-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const WRITE = '9b9e0002-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const STATUS = '9b9e0003-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const $ = id => document.getElementById(id);
+  let device = null, server = null, tx = null, status = null;
+  let library = [];
+  try { library = validateRecords(JSON.parse(localStorage.getItem('opentag_notes') || '[]')); } catch (_) { library = []; }
+
+  function bytes(s) { return new TextEncoder().encode(s).length; }
+  function validateRecords(value) {
+    if (!Array.isArray(value)) throw new Error('Expected a JSON array of notes.');
+    if (value.length > 250) throw new Error('A library can contain at most 250 notes.');
+    return value.map((item, i) => {
+      if (!item || !['TEXT','URL'].includes(item.kind) || typeof item.value !== 'string') throw new Error(`Invalid note at position ${i + 1}.`);
+      const v = item.value.trim();
+      if (!v || bytes(v) > 200 || /[\r\n\0]/.test(v)) throw new Error(`Note ${i + 1} is empty, too long, or has unsupported characters.`);
+      if (item.kind === 'URL' && !/^https?:\/\//i.test(v)) throw new Error(`URL note ${i + 1} must start with http:// or https://.`);
+      return { kind: item.kind, value: v };
+    });
+  }
+  function save() { localStorage.setItem('opentag_notes', JSON.stringify(library)); render(); }
+  function setState(text, mode='') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
+  function render() {
+    const root = $('library'); root.replaceChildren();
+    library.forEach((item, i) => {
+      const row = document.createElement('div'); row.className = 'item';
+      const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = item.kind;
+      const copy = document.createElement('div'); copy.className = 'copy';
+      const strong = document.createElement('strong'); strong.textContent = item.value;
+      const small = document.createElement('small'); small.textContent = `${bytes(item.value)} UTF-8 bytes`;
+      copy.append(strong, small);
+      const send = document.createElement('button'); send.textContent = 'Send'; send.disabled = !tx; send.onclick = () => sendRecord(item);
+      const remove = document.createElement('button'); remove.className = 'secondary'; remove.textContent = '×'; remove.setAttribute('aria-label','Remove note'); remove.onclick = () => { library.splice(i,1); save(); };
+      row.append(tag, copy, send, remove); root.append(row);
+    });
+    if (!library.length) { const p=document.createElement('p'); p.className='sub'; p.textContent='No notes saved yet.'; root.append(p); }
+  }
+  async function sendRecord(item) {
+    if (!tx) return;
+    try {
+      const wire = new TextEncoder().encode(`${item.kind}:${item.value}`);
+      if (wire.length > 220) throw new Error('Payload exceeds the device BLE limit.');
+      await tx.writeValueWithResponse(wire);
+      $('response').textContent = `Sent ${item.kind.toLowerCase()} note. Confirm the write on the device after presenting an NTAG215.`;
+    } catch (e) { $('response').textContent = `Send failed: ${e.message}`; }
+  }
+  $('connect').onclick = async () => {
+    if (!navigator.bluetooth) { $('response').textContent='Web Bluetooth is unavailable. Use Chrome/Edge on HTTPS or localhost.'; return; }
+    try {
+      device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE] }], optionalServices: [SERVICE] });
+      device.addEventListener('gattserverdisconnected', () => { tx=null; status=null; $('disconnect').disabled=true; setState('Disconnected'); render(); });
+      server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE);
+      tx = await service.getCharacteristic(WRITE);
+      status = await service.getCharacteristic(STATUS);
+      await status.startNotifications();
+      status.addEventListener('characteristicvaluechanged', e => { $('response').textContent = new TextDecoder().decode(e.target.value); });
+      $('disconnect').disabled=false; setState(device.name || 'OpenTag connected','ok'); render();
+    } catch (e) { setState('Not connected','err'); $('response').textContent = e.message; }
+  };
+  $('disconnect').onclick = () => { if (device?.gatt?.connected) device.gatt.disconnect(); };
+  $('addForm').onsubmit = e => {
+    e.preventDefault();
+    try { const rec=validateRecords([{kind:$('kind').value,value:$('value').value}])[0]; library.push(rec); save(); $('value').value=''; }
+    catch (err) { $('response').textContent=err.message; }
+  };
+  $('export').onclick = () => {
+    const blob = new Blob([JSON.stringify(library,null,2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='opentag-notes.json'; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('importFile').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      if (!file.name.toLowerCase().endsWith('.json') || file.size > 128000) throw new Error('Import a small JSON notes file only.');
+      const imported = validateRecords(JSON.parse(await file.text()));
+      library = [...library, ...imported].slice(0,250); save(); $('response').textContent=`Imported ${imported.length} NDEF note(s).`;
+    } catch (err) { $('response').textContent=`Import rejected: ${err.message}`; }
+    e.target.value='';
+  };
+  render();
+})();
+</script></body></html>

@@ -1,0 +1,9 @@
+# PlatformIO build output
+.pio/
+
+# Generic build/local output
+**/build/
+local.properties
+
+# OS
+.DS_Store
