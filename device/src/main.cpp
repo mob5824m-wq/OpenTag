@@ -47,15 +47,19 @@ extern "C" void otHmacSha256(const uint8_t *key, size_t keyLen,
 //   * Amiibo library: upload .bin dumps of your own amiibo tags over BLE
 //     (as a .zip via the web page or one-by-one), browse on the OLED and
 //     emulate any of them by presenting the dump's own 7-byte UID.
+//   * Four-button UI: UP/DOWN navigate, OK selects, BACK cancels or exits
+//     (BACK = GPIO13 on J1-19, the repurposed SPI MISO pin).
 //   * BLE service with a text command channel and a binary chunk channel.
 //
 // All tag data is user-supplied at runtime; nothing is bundled here.
 namespace Pins {
-constexpr int SCK = 12, MISO = 13, MOSI = 11;
+constexpr int SCK = 12, MOSI = 11;  // no MISO: see BUTTON_BACK below
 constexpr int OLED_CS = 10, OLED_DC = 9, OLED_RST = 8;
 constexpr int NFC_TX = 17, NFC_RX = 18;  // ESP32 TX -> Killer J4 RX
-// Buttons sit on the J3 header row (board-east side of the carrier PCB):
-constexpr int BUTTON_UP = 42, BUTTON_DOWN = 2, BUTTON_OK = 1;
+// UP/DOWN/OK sit on the J3 header row (board-east side of the carrier PCB).
+// BACK sits on J1-19 = GPIO13, the SPI MISO pin: the OLED bus is write-only,
+// so MISO is unused and the pin is repurposed as a button input instead.
+constexpr int BUTTON_UP = 42, BUTTON_DOWN = 2, BUTTON_OK = 1, BUTTON_BACK = 13;
 }
 
 namespace BleIds {
@@ -202,7 +206,8 @@ struct Button {
     return pressDur < maxHoldMs;
   }
 };
-Button btnUp(Pins::BUTTON_UP), btnDown(Pins::BUTTON_DOWN), btnOk(Pins::BUTTON_OK);
+Button btnUp(Pins::BUTTON_UP), btnDown(Pins::BUTTON_DOWN), btnOk(Pins::BUTTON_OK),
+       btnBack(Pins::BUTTON_BACK);
 
 // ---------------------------------------------------------------------------
 // BLE service
@@ -376,12 +381,13 @@ void drawScreen(bool force = false) {
     oled.setTextColor(WHITE); oled.setCursor(8, 37); oled.print("Ready to write");
     oled.setTextColor(MUTED); oled.setCursor(8, 55); oled.print("Tap an NTAG215 tag");
     oled.setCursor(8, 70); oled.print("to the NFC antenna.");
-    oled.setTextColor(MINT); oled.setCursor(8, 105); oled.print("UP/DOWN/OK: cancel");
+    oled.setTextColor(MINT); oled.setCursor(8, 105); oled.print("BACK: cancel");
   } else if (uiState == UI_TAG_READY) {
     oled.setTextColor(MINT); oled.setCursor(8, 35); oled.print("NTAG215 detected");
     oled.setTextColor(WHITE); oled.setCursor(8, 55); oled.print("OK to write NDEF");
     oled.setTextColor(MUTED); oled.setCursor(8, 73); oled.print(pendingKind);
     oled.setCursor(8, 87); oled.print(String(pendingValue).substring(0, 18));
+    oled.setCursor(8, 99); oled.print("BACK: cancel");
     oled.setTextColor(RED); oled.setCursor(8, 111); oled.print("Existing data replaced");
   } else if (uiState == UI_LIBRARY) {
     oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("AMIIBO LIBRARY");
@@ -389,20 +395,23 @@ void drawScreen(bool force = false) {
       oled.setTextColor(MUTED); oled.setCursor(8, 50); oled.print("Empty.");
       oled.setCursor(8, 66); oled.print("Upload a .zip of your");
       oled.setCursor(8, 80); oled.print("dumps via BLE sync.");
+      oled.setCursor(8, 96); oled.print("BACK: main menu");
     } else {
       const size_t visible = amiCount < 5 ? amiCount : 5;
       if (amiSelected < amiTop) amiTop = amiSelected;
       if (amiSelected >= amiTop + visible) amiTop = amiSelected - visible + 1;
       for (size_t i = 0; i < visible; ++i) {
         const size_t idx = amiTop + i;
-        const int y = 34 + (int)i * 15;
+        const int y = 34 + (int)i * 14;
         oled.setTextColor(idx == amiSelected ? MINT : MUTED);
         oled.setCursor(8, y); oled.print(idx == amiSelected ? "> " : "  ");
         oled.print(String(amiNames[idx]).substring(0, 16));
       }
-      oled.setTextColor(MUTED); oled.setCursor(8, 114);
+      oled.setTextColor(MUTED); oled.setCursor(8, 101);
+      oled.print("OK:emul hold:write");
+      oled.setCursor(8, 113);
       oled.print((int)(amiSelected + 1)); oled.print('/'); oled.print((int)amiCount);
-      oled.print(" OK:emul hold:write");
+      oled.print(" BACK:menu");
     }
   } else if (uiState == UI_WRITE_TAG) {
     oled.setTextColor(MINT); oled.setCursor(8, 30); oled.print("WRITE AMIIBO");
@@ -412,13 +421,13 @@ void drawScreen(bool force = false) {
     oled.setCursor(8, 80); oled.print("to the NFC antenna.");
     oled.setTextColor(RED); oled.setCursor(8, 100); oled.print("Overwrites the tag");
     oled.setTextColor(MINT); oled.setCursor(8, 116);
-    oled.print(uiMessage.length() ? uiMessage.substring(0, 19) : "UP/DOWN/OK: cancel");
+    oled.print(uiMessage.length() ? uiMessage.substring(0, 19) : "BACK: cancel");
   } else if (uiState == UI_LOCK_CONFIRM) {
     oled.setTextColor(MINT); oled.setCursor(8, 26); oled.print("WRITE VERIFIED");
     oled.setTextColor(WHITE); oled.setCursor(8, 44); oled.print("Lock this tag?");
     oled.setTextColor(RED); oled.setCursor(8, 60); oled.print("IRREVERSIBLE!");
     oled.setTextColor(MUTED); oled.setCursor(8, 80); oled.print("HOLD OK: lock");
-    oled.setCursor(8, 96); oled.print("short OK: skip lock");
+    oled.setCursor(8, 96); oled.print("BACK/short OK: skip");
     oled.setCursor(8, 112); oled.print("(auto-skips in 15 s)");
   } else if (uiState == UI_EMULATE) {
     oled.setTextColor(MINT); oled.setCursor(8, 32); oled.print("EMULATING");
@@ -433,10 +442,10 @@ void drawScreen(bool force = false) {
     oled.setCursor(8, 82); oled.print(emuMode == EMU_NOTE ? "NDEF note" : "Tap console to use");
     oled.setTextColor(LAVENDER); oled.setCursor(8, 100);
     oled.print("Killer slot 0 active");
-    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("UP/DOWN/OK: stop");
+    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: stop");
   } else {
     const char *items[] = {"Write NDEF note", "Emulate NDEF note", "Amiibo library",
-                           "BLE sync", "Clear note"};
+                           "BLE sync", "Clear NDEF note"};
     for (int i = 0; i < 5; ++i) {
       const int y = 28 + i * 16;
       oled.setTextColor(i == menuIndex ? MINT : MUTED);
@@ -832,6 +841,21 @@ void processBleCommands() {
     return;
   }
 
+  // Remote counterpart of the on-device "Clear NDEF note" menu item, so the
+  // web page's clear button actually clears instead of giving advice.
+  if (strcmp(cmd, "NOTE:CLEAR") == 0) {
+    portENTER_CRITICAL(&stateMux);
+    memset(pendingValue, 0, sizeof(pendingValue));
+    strlcpy(pendingKind, "TEXT", sizeof(pendingKind));
+    pendingChanged = false;
+    portEXIT_CRITICAL(&stateMux);
+    prefs.remove("kind");
+    prefs.remove("value");
+    pendingPresent = false;
+    setStatus("OK:note-cleared");
+    return;
+  }
+
   if (strncmp(cmd, "AMI:", 4) == 0) {
     char *rest = cmd + 4;
     if (strncmp(rest, "PUT:", 4) == 0) { handleAmiiboPut(rest + 4); return; }
@@ -942,7 +966,7 @@ void processBleCommands() {
 
 void handleButtons() {
   if (uiState == UI_TAG_READY) {
-    if (btnUp.pressed() || btnDown.pressed()) { tagReady = false; waitingForTag = false; uiState = UI_MENU; uiMessage = "Write cancelled"; drawScreen(true); return; }
+    if (btnUp.pressed() || btnDown.pressed() || btnBack.pressed()) { tagReady = false; waitingForTag = false; uiState = UI_MENU; uiMessage = "Write cancelled"; drawScreen(true); return; }
     if (btnOk.pressed()) {
       const bool ok = pendingPresent && writeNtag215Ndef(pendingKind, pendingValue);
       tagReady = false; waitingForTag = false; uiState = UI_MENU;
@@ -952,10 +976,13 @@ void handleButtons() {
       return;
     }
   } else if (uiState == UI_WAIT_TAG) {
-    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed()) {
+    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed() || btnBack.pressed()) {
       waitingForTag = false; uiState = UI_MENU; uiMessage = "Scan cancelled"; drawScreen(true);
     }
   } else if (uiState == UI_LIBRARY) {
+    // BACK is the library's way out; before it existed a populated library
+    // had no exit path at all.
+    if (btnBack.pressed()) { uiState = UI_MENU; uiMessage = ""; drawScreen(true); return; }
     if (btnUp.pressed() && amiCount) { amiSelected = (amiSelected + amiCount - 1) % amiCount; drawScreen(true); }
     if (btnDown.pressed() && amiCount) { amiSelected = (amiSelected + 1) % amiCount; drawScreen(true); }
     // Long-press OK: write the selected amiibo to a physical NTAG215.
@@ -979,7 +1006,7 @@ void handleButtons() {
       }
     }
   } else if (uiState == UI_WRITE_TAG) {
-    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed()) {
+    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed() || btnBack.pressed()) {
       disarmAmiiboWrite();
       uiState = UI_MENU;
       uiMessage = "Write cancelled";
@@ -996,14 +1023,14 @@ void handleButtons() {
       setStatus(ok ? "OK:locked" : "ERR:lock-failed");
       drawScreen(true);
     } else if (btnOk.shortPress(1200) || btnUp.pressed() || btnDown.pressed() ||
-               millis() - lockAskedAt > 15000) {
+               btnBack.pressed() || millis() - lockAskedAt > 15000) {
       uiState = UI_MENU;
       uiMessage = "Left unlocked";
       setStatus("OK:lock-skipped");
       drawScreen(true);
     }
   } else if (uiState == UI_EMULATE) {
-    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed()) {
+    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed() || btnBack.pressed()) {
       stopEmulation();
       uiMessage = "Emulation stopped";
       drawScreen(true);
@@ -1011,6 +1038,7 @@ void handleButtons() {
   } else {  // UI_MENU
     if (btnUp.pressed()) { menuIndex = (menuIndex + 4) % 5; uiMessage = ""; drawScreen(true); }
     if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 5; uiMessage = ""; drawScreen(true); }
+    if (btnBack.pressed()) { uiMessage = "You're at the menu"; drawScreen(true); }
     if (btnOk.pressed()) {
       if (menuIndex == 0) {
         if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
@@ -1065,8 +1093,11 @@ void setup() {
   pinMode(Pins::BUTTON_UP, INPUT_PULLUP);
   pinMode(Pins::BUTTON_DOWN, INPUT_PULLUP);
   pinMode(Pins::BUTTON_OK, INPUT_PULLUP);
+  pinMode(Pins::BUTTON_BACK, INPUT_PULLUP);
 
-  SPI.begin(Pins::SCK, Pins::MISO, Pins::MOSI);
+  // No MISO: the OLED is write-only and GPIO13 (the MISO pin) is the BACK
+  // button, so it must not be claimed by the SPI driver.
+  SPI.begin(Pins::SCK, -1, Pins::MOSI);
   oled.begin();
   oled.fillScreen(BG);
   oled.setTextColor(MINT); oled.setTextSize(1); oled.setCursor(8, 20); oled.print("OPENTAG STARTING");

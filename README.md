@@ -48,7 +48,8 @@ guide, and parts list.
 
 ESP32-S3-DevKitC-1 + **PN532Killer** (ST25R3916-class NFC emulator; the
 classic PN532 cannot present the 7-byte, signature-bound UIDs amiibo relies
-on) + SSD1351 OLED + three buttons + LiPo power (TP4056 + MT3608). The NFC
+on) + SSD1351 OLED + four buttons (UP / DOWN / OK / BACK) + LiPo power
+(TP4056 + MT3608). The NFC
 board talks HSU UART to the ESP32; a 540-byte page image per tag is all the
 firmware pushes. See [`device/HARDWARE.md`](device/HARDWARE.md) for the full
 interface map and [`hardware/`](hardware/) for:
@@ -59,7 +60,7 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
 | `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps (OpenSCAD source; `.cad` is the project's extension) |
-| `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 3 caps) |
+| `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |
 | `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
 | `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
 
@@ -183,7 +184,8 @@ library entry.
 ## Device menu
 
 `Write NDEF note` → `Emulate NDEF note` → `Amiibo library` → `BLE sync` →
-`Clear note`, driven by UP/DOWN/OK. Emulation runs on the PN532Killer's slot
+`Clear NDEF note`, driven by UP/DOWN/OK with BACK to cancel or exit. Emulation
+runs on the PN532Killer's slot
 0 and stops on any button press or a BLE `STOP`. In the library, short OK
 emulates; long OK (1 s) is the advanced path that arms a write to a physical
 tag. Preview the whole interface (buttons, long-press, every screen) in your

@@ -3,8 +3,8 @@
 //
 //   part = "both" | "front" | "back"
 //
-// FRONT SHELL : OLED window, three button holes, USB + power-switch slots,
-//               screw bosses.
+// FRONT SHELL : OLED window, four button holes (UP/DOWN/OK/BACK), USB +
+//               power-switch slots, screw bosses.
 // BACK PLATE  : carrier-PCB standoffs, PN532Killer snap bay with thinned
 //               NFC tap window, LiPo bay with retainers, power-module tray.
 //
@@ -49,7 +49,7 @@ oled_mod_h = 10.5;               // header (8.5) + module PCB
 
 // ---- buttons (carrier y = +17) --------------------------------------------------
 btn_dy  = pcb_y + 17;
-btn_dx  = 18;                    // -18 / 0 / +18
+btn_dx  = 16.5;                  // -24.75 / -8.25 / +8.25 / +24.75 (UP DOWN OK BACK)
 btn_hole = 6.4;                  // 6 mm tactile + clearance
 cap_d = 9; cap_h = 2.2; cap_collar = 7.5;   // printed cap
 
@@ -102,8 +102,8 @@ module front_shell() {
     // OLED window with chamfered bezel on the outside (top face)
     translate([oled_cx, oled_cy, inner_d - 0.01])
       cylinder(d1 = oled_win, d2 = oled_win + 2*1.2, h = wall + 0.02);
-    // button holes
-    for (x = [-btn_dx, 0, btn_dx])
+    // button holes (UP DOWN OK BACK, west -> east)
+    for (x = [-1.5*btn_dx, -0.5*btn_dx, 0.5*btn_dx, 1.5*btn_dx])
       translate([x, btn_dy, inner_d - 0.01]) cylinder(d = btn_hole, h = wall + 0.02);
     // DevKit USB slot, left wall
     translate([-outer_w/2 - 0.01, usb_slot_y - usb_slot_l/2, usb_slot_z0])
@@ -195,7 +195,7 @@ module back_plate() {
 }
 
 // ---------------------------------------------------------------------------
-// Button caps (print 3)
+// Button caps (print 4)
 // ---------------------------------------------------------------------------
 module button_cap() {
   union() {
@@ -211,7 +211,7 @@ if (part == "back") back_plate();
 if (part == "both") {
   translate([-outer_w/2 - 14, 0, outer_d]) rotate([180, 0, 0]) assembly_front();
   translate([outer_w/2 + 14, 0, 0]) back_plate();
-  for (i = [-1, 0, 1])
+  for (i = [-1.5, -0.5, 0.5, 1.5])
     translate([i*15, outer_l/2 + 12, 0]) button_cap();
 }
 

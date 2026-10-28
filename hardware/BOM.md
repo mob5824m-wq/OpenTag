@@ -21,7 +21,7 @@
 | 10 | Female header 1×22, 2.54 mm | 2 | DevKit socket |
 | 11 | Female header 1×7, 2.54 mm | 1 | OLED socket |
 | 12 | Male header 1×4, 2.54 mm | 3 | Killer, TP4056, MT3608 |
-| 13 | Tactile switch 6×6 mm, through-hole, ~8.5 mm seated height | 3 | Standard 6.5 × 4.5 mm pin pattern |
+| 13 | Tactile switch 6×6 mm, through-hole, ~8.5 mm seated height | 4 | Standard 6.5 × 4.5 mm pin pattern; UP / DOWN / OK / BACK |
 | 14 | JST-PH-2 through-hole connector | 1 | Battery input |
 | 15 | M3 screws + standoffs/nuts | 4 + 4 + 4 | PCB mount (6 mm) and shell closure (10 mm countersunk) |
 | 16 | Dupont jumper wires, F–F, ~10 cm | 4 | ESP32 ⇄ PN532Killer (3V3, GND, TX, RX) |
@@ -31,7 +31,7 @@
 ## Printed parts (`hardware/cad/opentag_shell.cad`)
 
 Print-ready STLs are in `hardware/cad/stl/` (front shell, back plate, button
-cap — print 3 caps). Regenerate them with OpenSCAD
+cap — print 4 caps). Regenerate them with OpenSCAD
 (`openscad -o front.stl -D 'part="front"' opentag_shell.cad`, etc.) or with
 `python3 tools/cad_to_stl.py`, which also self-checks the mesh.
 
@@ -39,7 +39,7 @@ cap — print 3 caps). Regenerate them with OpenSCAD
 |---|------|----|----------|
 | 19 | Front shell | 1 | PLA/PETG — **not** carbon- or metal-filled near the tap zone |
 | 20 | Back plate | 1 | PLA/PETG |
-| 21 | Button cap | 3 | PLA/PETG or TPU |
+| 21 | Button cap | 4 | PLA/PETG or TPU |
 
 ## Where to buy (no affiliation)
 

@@ -32,15 +32,16 @@
 </head>
 <body>
 <h1>OPENTAG — DEVICE UI PREVIEW</h1>
-<p class="sub">Simulation of the firmware's OLED interface (SSD1351, 128×128) for design testing. This page talks to no hardware — every screen, color and pixel position is a faithful port of <code>drawScreen()</code> in <code>device/src/main.cpp</code>. Long-press OK by holding the button ~1&nbsp;s.</p>
+<p class="sub">Simulation of the firmware's OLED interface (SSD1351, 128×128) for design testing. This page talks to no hardware — every screen, color and pixel position is a faithful port of <code>drawScreen()</code> in <code>device/src/main.cpp</code>. UP/DOWN move, OK selects (hold ~1&nbsp;s for a long press), BACK cancels or exits whatever screen you're on.</p>
 
 <div class="stage">
   <div>
     <div class="oled-case"><div class="bezel"><canvas id="oled" width="128" height="128"></canvas></div></div>
     <div class="btnrow">
       <div><button class="hwbtn" id="bUp">UP</button><div class="lbl">GPIO42</div></div>
-      <div><button class="hwbtn ok" id="bOk">OK</button><div class="lbl">GPIO1</div></div>
       <div><button class="hwbtn" id="bDown">DOWN</button><div class="lbl">GPIO2</div></div>
+      <div><button class="hwbtn ok" id="bOk">OK</button><div class="lbl">GPIO1</div></div>
+      <div><button class="hwbtn" id="bBack">BACK</button><div class="lbl">GPIO13</div></div>
     </div>
   </div>
 
@@ -58,9 +59,10 @@
       <button id="addAmiibo">Add amiibo to library</button>
       <button id="delAmiibo">Remove selected</button>
     </div>
-    <div class="row" style="color:#8fa89a;font-size:11px">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> = OK (hold for long press)</div>
+    <div class="row" style="color:#8fa89a;font-size:11px">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> = OK (hold for long press), <kbd>Backspace</kbd>/<kbd>←</kbd> = BACK</div>
     <div id="statusline">UI state: MENU</div>
-    <p class="note">"Simulate: tap NTAG215" places a tag on the antenna — used by the note-write screen, and (advanced) the amiibo write screen. "Console taps tag" imitates a Switch reading the emulated tag.</p>
+    <p class="note">The four round buttons mirror the physical device (UP · DOWN · OK · BACK, west→east on the shell). "Simulate: tap NTAG215" places a tag on the antenna — used by the note-write screen, and (advanced) the amiibo write screen. "Console taps tag" imitates a Switch reading the emulated tag.</p>
+    <p class="note">An <b>NDEF note</b> is a short text or web link stored on the device: sync one from the BLE sync page, then "Write NDEF note" copies it to a blank NTAG215 tag (any NFC phone can read it) or "Emulate NDEF note" pretends to be that tag. "Clear NDEF note" wipes the stored note. BACK is the universal exit: cancel a scan, stop emulation, skip the lock prompt, or leave the amiibo library.</p>
   </div>
 </div>
 
@@ -161,12 +163,13 @@
       setTextColor(C.WHITE); setCursor(8, 37); print('Ready to write');
       setTextColor(C.MUTED); setCursor(8, 55); print('Tap an NTAG215 tag');
       setCursor(8, 70); print('to the NFC antenna.');
-      setTextColor(C.MINT); setCursor(8, 105); print('UP/DOWN/OK: cancel');
+      setTextColor(C.MINT); setCursor(8, 105); print('BACK: cancel');
     } else if (uiState === UI.TAG_READY) {
       setTextColor(C.MINT); setCursor(8, 35); print('NTAG215 detected');
       setTextColor(C.WHITE); setCursor(8, 55); print('OK to write NDEF');
       setTextColor(C.MUTED); setCursor(8, 73); print(pendingKind);
       setCursor(8, 87); print(String(pendingValue).substring(0, 18));
+      setCursor(8, 99); print('BACK: cancel');
       setTextColor(C.RED); setCursor(8, 111); print('Existing data replaced');
     } else if (uiState === UI.LIBRARY) {
       setTextColor(C.MINT); setCursor(8, 27); print('AMIIBO LIBRARY');
@@ -174,19 +177,22 @@
         setTextColor(C.MUTED); setCursor(8, 50); print('Empty.');
         setCursor(8, 66); print('Upload a .zip of your');
         setCursor(8, 80); print('dumps via BLE sync.');
+        setCursor(8, 96); print('BACK: main menu');
       } else {
         const visible = amiCount < 5 ? amiCount : 5;
         if (amiSelected < amiTop) amiTop = amiSelected;
         if (amiSelected >= amiTop + visible) amiTop = amiSelected - visible + 1;
         for (let i = 0; i < visible; i++) {
-          const idx = amiTop + i, y = 34 + i * 15;
+          const idx = amiTop + i, y = 34 + i * 14;
           setTextColor(idx === amiSelected ? C.MINT : C.MUTED);
           setCursor(8, y); print(idx === amiSelected ? '> ' : '  ');
           print(String(amiiboNames[idx]).substring(0, 16));
         }
-        setTextColor(C.MUTED); setCursor(8, 114);
+        setTextColor(C.MUTED); setCursor(8, 101);
+        print('OK:emul hold:write');
+        setCursor(8, 113);
         print(String(amiSelected + 1)); print('/'); print(String(amiCount));
-        print(' OK:emul hold:write');
+        print(' BACK:menu');
       }
     } else if (uiState === UI.WRITE_TAG) {
       setTextColor(C.MINT); setCursor(8, 30); print('WRITE AMIIBO');
@@ -194,13 +200,13 @@
       setTextColor(C.MUTED); setCursor(8, 66); print('Tap a BLANK NTAG215');
       setCursor(8, 80); print('to the NFC antenna.');
       setTextColor(C.RED); setCursor(8, 100); print('Overwrites the tag');
-      setTextColor(C.MINT); setCursor(8, 116); print(uiMessage.length ? uiMessage.substring(0, 19) : 'UP/DOWN/OK: cancel');
+      setTextColor(C.MINT); setCursor(8, 116); print(uiMessage.length ? uiMessage.substring(0, 19) : 'BACK: cancel');
     } else if (uiState === UI.LOCK_CONFIRM) {
       setTextColor(C.MINT); setCursor(8, 26); print('WRITE VERIFIED');
       setTextColor(C.WHITE); setCursor(8, 44); print('Lock this tag?');
       setTextColor(C.RED); setCursor(8, 60); print('IRREVERSIBLE!');
       setTextColor(C.MUTED); setCursor(8, 80); print('HOLD OK: lock');
-      setCursor(8, 96); print('short OK: skip lock');
+      setCursor(8, 96); print('BACK/short OK: skip');
       setCursor(8, 112); print('(auto-skips in 15 s)');
     } else if (uiState === UI.EMULATE) {
       setTextColor(C.MINT); setCursor(8, 32); print('EMULATING');
@@ -210,9 +216,9 @@
       for (const b of emuUid) { if (!first) print(':'); first = false; if (b < 0x10) print('0'); print(b, 16); }
       setCursor(8, 82); print(emuMode === 1 ? 'NDEF note' : 'Tap console to use');
       setTextColor(C.LAVENDER); setCursor(8, 100); print('Killer slot 0 active');
-      setTextColor(C.MINT); setCursor(8, 116); print('UP/DOWN/OK: stop');
+      setTextColor(C.MINT); setCursor(8, 116); print('BACK: stop');
     } else {
-      const items = ['Write NDEF note', 'Emulate NDEF note', 'Amiibo library', 'BLE sync', 'Clear note'];
+      const items = ['Write NDEF note', 'Emulate NDEF note', 'Amiibo library', 'BLE sync', 'Clear NDEF note'];
       for (let i = 0; i < 5; i++) {
         const y = 28 + i * 16;
         setTextColor(i === menuIndex ? C.MINT : C.MUTED);
@@ -230,7 +236,7 @@
   function pressed(state) {
     // mirrors handleButtons() in main.cpp
     if (uiState === UI.TAG_READY) {
-      if (state === 'up' || state === 'down') { uiState = UI.MENU; uiMessage = 'Write cancelled'; }
+      if (state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Write cancelled'; }
       if (state === 'ok') {
         const ok = pendingPresent;  // simulated write+verify success
         uiState = UI.MENU; uiMessage = ok ? 'NDEF verified OK' : 'Write/verify failed';
@@ -239,6 +245,8 @@
     } else if (uiState === UI.WAIT_TAG) {
       uiState = UI.MENU; uiMessage = 'Scan cancelled';
     } else if (uiState === UI.LIBRARY) {
+      // BACK is the library's way out (a populated library had none before).
+      if (state === 'back') { uiState = UI.MENU; uiMessage = ''; }
       if (state === 'up' && amiCount) amiSelected = (amiSelected + amiCount - 1) % amiCount;
       if (state === 'down' && amiCount) amiSelected = (amiSelected + 1) % amiCount;
       if (state === 'ok-hold') {
@@ -255,12 +263,13 @@
       uiState = UI.MENU; writeArmed = false; uiMessage = 'Write cancelled';
     } else if (uiState === UI.LOCK_CONFIRM) {
       if (state === 'ok-hold') { uiState = UI.MENU; uiMessage = 'Tag locked'; }
-      else if (state === 'ok' || state === 'up' || state === 'down') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
+      else if (state === 'ok' || state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
     } else if (uiState === UI.EMULATE) {
       emuMode = 0; emuName = ''; uiState = UI.MENU; uiMessage = 'Emulation stopped';
     } else { // MENU
       if (state === 'up') { menuIndex = (menuIndex + 4) % 5; uiMessage = ''; }
       if (state === 'down') { menuIndex = (menuIndex + 1) % 5; uiMessage = ''; }
+      if (state === 'back') uiMessage = "You're at the menu";
       if (state === 'ok') {
         if (menuIndex === 0) {
           if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
@@ -291,31 +300,43 @@
   }
 
   // ---- buttons: click = short press, hold ~1 s = long press ----------------
+  // A press only fires on a real mouseup/touchend that started on the button.
+  // Sliding the pointer OFF the button just cancels the pending press (clears
+  // the long-press timer and the visual .down state) — it must never trigger
+  // the button. That was a real bug: mouseleave used to run the same handler
+  // as mouseup, so hovering across a button "pressed" it.
   function bindButton(el, kind) {
-    let timer = null, longFired = false;
-    const down = e => { e.preventDefault(); el.classList.add('down'); longFired = false;
+    let timer = null, longFired = false, isDown = false;
+    const down = e => { e.preventDefault(); isDown = true; el.classList.add('down'); longFired = false;
       timer = setTimeout(() => { longFired = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000); };
-    const up = e => { e.preventDefault(); el.classList.remove('down');
+    const up = e => { e.preventDefault(); if (!isDown) return; isDown = false; el.classList.remove('down');
       if (timer) { clearTimeout(timer); timer = null; }
       if (!longFired) pressed(kind); };
-    el.addEventListener('mousedown', down); el.addEventListener('mouseup', up); el.addEventListener('mouseleave', up);
+    const leave = () => {  // pointer left the button: cancel, never fire
+      if (!isDown) return; isDown = false; el.classList.remove('down');
+      if (timer) { clearTimeout(timer); timer = null; } };
+    el.addEventListener('mousedown', down); el.addEventListener('mouseup', up); el.addEventListener('mouseleave', leave);
     el.addEventListener('touchstart', down, { passive: false }); el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', leave);
   }
-  bindButton(document.getElementById('bUp'), 'up');
-  bindButton(document.getElementById('bDown'), 'down');
-  bindButton(document.getElementById('bOk'), 'ok');
+  const btnEls = { up: document.getElementById('bUp'), down: document.getElementById('bDown'),
+                   ok: document.getElementById('bOk'), back: document.getElementById('bBack') };
+  bindButton(btnEls.up, 'up');
+  bindButton(btnEls.down, 'down');
+  bindButton(btnEls.ok, 'ok');
+  bindButton(btnEls.back, 'back');
 
-  const keymap = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok' };
+  const keymap = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok', Backspace: 'back', ArrowLeft: 'back' };
   let keyTimer = null, keyLong = false;
   document.addEventListener('keydown', e => {
     const kind = keymap[e.key]; if (!kind || e.repeat) return;
     e.preventDefault(); keyLong = false;
-    document.getElementById(kind === 'ok' ? 'bOk' : kind === 'up' ? 'bUp' : 'bDown').classList.add('down');
+    btnEls[kind].classList.add('down');
     keyTimer = setTimeout(() => { keyLong = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000);
   });
   document.addEventListener('keyup', e => {
     const kind = keymap[e.key]; if (!kind) return;
-    document.getElementById(kind === 'ok' ? 'bOk' : kind === 'up' ? 'bUp' : 'bDown').classList.remove('down');
+    btnEls[kind].classList.remove('down');
     if (keyTimer) { clearTimeout(keyTimer); keyTimer = null; }
     if (!keyLong) pressed(kind);
   });

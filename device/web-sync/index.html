@@ -13,13 +13,14 @@
     button,.filebtn{border:0;border-radius:13px;padding:12px 16px;background:var(--mint);color:#10131b;font-weight:750;cursor:pointer;font:inherit;font-size:13px}button.secondary,.filebtn{background:#2a3341;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:7px;flex:1;min-width:210px}.field label{font-size:12px;color:var(--muted);font-weight:650}input,select{width:100%;border:1px solid var(--line);background:#111720;color:var(--text);border-radius:12px;padding:12px 13px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--mint)}.sub{font-size:12px;color:var(--muted)}
     .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.thumb{width:44px;height:44px;border-radius:9px;overflow:hidden;flex:none;background:#0d1219;display:flex;align-items:center;justify-content:center;color:#cfe3d0;font-size:18px;font-weight:800}.thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb.ghost{border:1px solid #293341}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px;white-space:nowrap}.tag.ok{color:var(--mint);border-color:#5b7135}.tag.bad{color:var(--bad);border-color:#7a4040}
     .notice{font-size:12px;color:var(--muted);border-left:3px solid var(--violet);padding:3px 0 3px 12px;margin:13px 0}.warning{color:#ffcc9b}.rule{height:1px;background:#2b3442;margin:17px 0}.foot{font-size:11px;color:var(--muted);max-width:700px;margin:22px 0 0}.hidden{display:none!important}
+    .dbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:9px;margin-top:12px}.dbcard{display:flex;gap:10px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:14px;padding:9px 11px}.dbcard .copy{min-width:0}.dbcard strong{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dbcard small{color:var(--muted);font-size:11px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #log{background:#0d1117;border:1px solid #232c39;border-radius:13px;padding:11px 13px;font:12px/1.6 ui-monospace,monospace;color:#a8b4c6;max-height:190px;overflow-y:auto;white-space:pre-wrap;margin-top:13px}
   </style>
 </head>
 <body><main>
   <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
   <h1>Your tags,<br>ready to tap.</h1>
-  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — with in-browser metadata and box art, and trigger emulation from your phone.</p>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — and browse the full amiibo database with box art below, no connection needed.</p>
   <section class="card">
     <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
@@ -28,9 +29,16 @@
   </section>
 
   <section class="card">
-    <strong>NDEF note</strong><p class="sub">Plain text or HTTP(S) URL, up to 200 UTF-8 bytes. Written to NTAG215 tags or emulated as a virtual tag.</p>
+    <strong>NDEF note</strong> <span class="sub">— a short text or link the tag carries</span>
+    <p class="sub">An <b>NDEF note</b> is the standard "message" stored on NFC tags: up to 200 bytes of plain text or an http(s) link. Queue one here, send it to the device, and the device can either write it onto a blank NTAG215 tag (any NFC phone can then read it) or emulate it as a virtual tag. Exactly the note below is what the device menu's <i>Write / Emulate / Clear NDEF note</i> items act on.</p>
     <form id="addForm"><div class="row"><div class="field"><label for="kind">Record type</label><select id="kind"><option value="TEXT">Text</option><option value="URL">Web URL</option></select></div><div class="field" style="flex:3"><label for="value">Content</label><input id="value" maxlength="200" required placeholder="A short note or https://example.com"></div><button type="submit">Queue note</button></div></form>
     <div class="row" style="margin-top:15px"><button id="send" class="secondary" disabled>Send note now</button><button id="clear" class="secondary" disabled>Clear device note</button></div>
+    <details style="margin-top:12px"><summary class="sub" style="cursor:pointer">How the note flow works, step by step</summary>
+      <p class="sub" style="margin:8px 0 0">1. Pick <b>Text</b> or <b>Web URL</b>, type the content, press <b>Queue note</b> — it is only staged in this page so far.<br>
+      2. <b>Send note now</b> pushes it to the device over BLE; the device stores it (survives reboots) and shows it at the bottom of its menu.<br>
+      3. On the device, <b>Write NDEF note</b> copies it onto a blank NTAG215 tag, <b>Emulate NDEF note</b> makes the device pretend to be a tag carrying it, and <b>Clear NDEF note</b> wipes it.<br>
+      4. <b>Clear device note</b> above does the same clear remotely — the same command the device menu runs.</p>
+    </details>
   </section>
 
   <section class="card">
@@ -42,6 +50,14 @@
     <strong style="font-size:13px">On device</strong>
     <div id="deviceLib" class="library"></div>
     <p class="sub warning">Use only backups of amiibo you own. Amiibo data is Nintendo proprietary; this page and the device never bundle or generate it — you supply your own dumps.</p>
+  </section>
+
+  <section class="card">
+    <strong>Amiibo database</strong> <span class="sub">— browse before you sync</span>
+    <p class="sub">Every figure in the open <a href="https://github.com/N3evin/AmiiboAPI" target="_blank" rel="noreferrer">AmiiboAPI</a> database, with box art, series, type and release year. This is the same data your dumps are matched against above, and it needs no device connection. Box-art thumbnails load lazily from AmiiboAPI's image host on GitHub (needs internet; nothing is uploaded or sent anywhere).</p>
+    <div class="row"><div class="field"><label for="dbSearch">Search name, series or game</label><input id="dbSearch" type="search" placeholder="e.g. link, animal crossing, smash…"></div></div>
+    <p class="sub" id="dbCount" style="margin:10px 0 0"></p>
+    <div id="dbGrid" class="dbgrid"></div>
   </section>
 
   <section class="card">
@@ -559,10 +575,55 @@
     } catch (e) { log(e.message, 'err'); }
   };
   $('clear').onclick = async () => {
-    // "Clear note" is a device-menu action; a cleared device note is restored
-    // by sending a new one. There is no separate BLE clear command.
-    log('Use the device menu (Clear note) or send a new note to replace it.');
+    // Runs the same wipe the device's "Clear NDEF note" menu item performs
+    // (firmware command NOTE:CLEAR). A new note can be sent at any time.
+    try { await sendCmd('NOTE:CLEAR'); await expect('OK:note-cleared', 4000); }
+    catch (e) { log(e.message, 'err'); }
   };
+
+  // ---------- amiibo database browser (no connection needed) ----------
+  const DB_LIMIT = 120;   // cards in the DOM at once; images load lazily
+  function dbCardFor(id) {
+    const m = dbLookup(id);
+    const card = document.createElement('div'); card.className = 'dbcard';
+    const wrap = document.createElement('div'); wrap.className = 'thumb';
+    const img = document.createElement('img');
+    img.alt = m.name; img.loading = 'lazy'; img.src = m.image;
+    img.onerror = () => {
+      img.remove(); wrap.classList.add('ghost');
+      let h = 0; for (const ch of id) h = (h * 31 + parseInt(ch, 16)) >>> 0;
+      wrap.style.background = 'hsl(' + (h % 360) + ' 45% 32%)';
+      wrap.textContent = m.name.charAt(0).toUpperCase();
+    };
+    wrap.append(img);
+    const copy = document.createElement('div'); copy.className = 'copy';
+    const strong = document.createElement('strong'); strong.textContent = m.name;
+    const small = document.createElement('small');
+    small.textContent = [m.series, m.type, m.year].filter(Boolean).join(' · ');
+    copy.append(strong, small);
+    card.append(wrap, copy);
+    card.title = m.name + ' — ' + [m.series, m.type, m.game, m.year].filter(Boolean).join(' · ');
+    return card;
+  }
+  function renderDb() {
+    const q = normName($('dbSearch').value || '');
+    const ids = [];
+    for (const [id, v] of dbEntries) {
+      if (q && !normName(v[0]).includes(q) && !normName(v[1]).includes(q) &&
+          !normName(v[2]).includes(q) && !normName(v[3]).includes(q)) continue;
+      ids.push(id);
+      if (ids.length >= DB_LIMIT) break;
+    }
+    const grid = $('dbGrid'); grid.replaceChildren();
+    for (const id of ids) grid.append(dbCardFor(id));
+    const total = dbEntries.length;
+    $('dbCount').textContent = ids.length >= DB_LIMIT
+      ? `showing the first ${DB_LIMIT} matches of ${total} amiibo — keep typing to narrow it down`
+      : `${ids.length} of ${total} amiibo`;
+  }
+  let dbTimer = null;
+  $('dbSearch').oninput = () => { clearTimeout(dbTimer); dbTimer = setTimeout(renderDb, 150); };
+  renderDb();
 
   // ---------- connect ----------
   $('connect').onclick = async () => {
@@ -594,6 +655,6 @@
   renderParsed();
   renderDeviceLib();
   setConnectedButtons(false);
-  log('Ready. Connect, then upload a .zip of your NTAG215 dumps.');
+  log('Ready. Connect over BLE to sync, or just browse the amiibo database below.');
 })();
 </script></body></html>

@@ -12,7 +12,7 @@ which self-checks connectivity and clearance before writing the file) is a
 | J_DEVKIT | 2 × 1×22 female headers, 2.54 mm | ESP32-S3-DevKitC-1 socket (rows 22.86 mm apart, exact Espressif geometry) |
 | J_OLED | 1 × 1×7 female header | 1.3" SSD1351 OLED module (pin 1 = GND, square pad) |
 | J_KILLER | 1 × 1×4 male header | PN532Killer J4 via 4 F–F Dupont jumpers |
-| SW_BTN ×3 | 6 × 6 mm tactile switches | UP / DOWN / OK |
+| SW_BTN ×4 | 6 × 6 mm tactile switches | UP / DOWN / OK / BACK |
 | J_BAT | JST-PH-2 (2.0 mm) | LiPo cell input (**verify polarity!**) |
 | J_CHG | 1 × 1×4 male header | TP4056 module: B+ B− OUT+ OUT− |
 | J_BOOST | 1 × 1×4 male header | MT3608 module: IN+ IN− OUT− OUT+ |
@@ -57,6 +57,7 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
 | BTN_UP | J3-6 (GPIO42) | UP button | 6 / 42 |
 | BTN_DOWN | J3-5 (GPIO2) | DOWN button | 5 / 2 |
 | BTN_OK | J3-4 (GPIO1) | OK button | 4 / 1 |
+| BTN_BACK | J1-19 (GPIO13) | BACK button (cancel / exit) | 19 / 13 |
 | OLED_SCK | J1-18 (GPIO12) | OLED SCL | 18 / 12 |
 | OLED_MOSI | J1-17 (GPIO11) | OLED SDA | 17 / 11 |
 | OLED_RST | J1-12 (GPIO8) | OLED RES | 12 / 8 |
@@ -68,8 +69,10 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
 - Button pins: both pads on each side of every switch are paralleled on the
   PCB, so any 6 × 6 mm tactile with the standard 6.5 × 4.5 mm pin pattern
   works regardless of internal pin pairing.
-- J1-19 (GPIO13/MISO) is intentionally left unconnected — the OLED bus is
-  write-only.
+- J1-19 (GPIO13, the SPI MISO pin) is the BACK button, not a bus pin: the
+  OLED is write-only so MISO is unused, and the firmware never passes it to
+  `SPI.begin()`. BACK cancels the tag-scan/write screens, stops emulation,
+  skips the lock confirm and exits the amiibo library back to the menu.
 - The PN532Killer runs on 3.3 V only. Its J4 header: pin 9 = RX, pin 8 = TX
   (3.3 V TTL), plus GND and VCC — **verify against your board's silkscreen.**
 

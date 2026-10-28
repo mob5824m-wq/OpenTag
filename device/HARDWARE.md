@@ -35,13 +35,19 @@ command set from an on-board emulator slot, so the ESP32 only has to push a
 |---|---|
 | OLED SPI: SCK, MOSI | J1-18 / GPIO12, J1-17 / GPIO11 |
 | OLED CS, DC, RST | J1-16 / GPIO10, J1-15 / GPIO9, J1-12 / GPIO8 |
-| OLED MISO (unused, write-only bus) | J1-19 / GPIO13 — not connected |
+| OLED MISO | unused (write-only bus) — GPIO13 is repurposed as the BACK button |
 | NFC UART (Serial2, 115200 8N1) | TX J1-10 / GPIO17 → Killer RX; RX J1-11 / GPIO18 ← Killer TX |
-| Buttons (active-low) | UP J3-6 / GPIO42, DOWN J3-5 / GPIO2, OK J3-4 / GPIO1 |
+| Buttons (active-low) | UP J3-6 / GPIO42, DOWN J3-5 / GPIO2, OK J3-4 / GPIO1, BACK J1-19 / GPIO13 |
 | Power in | 5 V via J1-21 (after Schottky from the boost), 3V3 out at J1-1/2 for OLED + Killer |
 
 Avoid on the S3: GPIO 0/3/45/46 (strapping), 19/20 (USB D−/D+), 26–32 (flash),
 35–37 (octal PSRAM), 43/44 (UART0). The pin choices above dodge all of them.
+
+BACK sits on GPIO13 (the SPI MISO pin): the OLED bus is write-only, so the
+firmware calls `SPI.begin()` without MISO and uses the pin as a button input
+instead. BACK is the universal "get me out of here": it cancels the tag-scan
+and write screens, stops emulation, skips the lock confirmation, and exits
+the amiibo library back to the menu.
 
 ## NFC notes
 

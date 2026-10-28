@@ -8,7 +8,7 @@ all-through-hole carrier that hosts
     Espressif's board: 22.86 mm row spacing, 2.54 mm pitch, 69.7 x 25.4 board),
   * a 1.3" SSD1351 OLED module in a 1x7 female header,
   * a PN532Killer on a 4-way cable (1x4 pin header),
-  * three tactile buttons,
+  * four tactile buttons (UP / DOWN / OK / BACK),
   * LiPo power: JST-PH battery input, TP4056 charger and MT3608 boost modules
     on wire headers, a power switch and a series Schottky diode.
 
@@ -28,7 +28,7 @@ import sys
 
 NET_NAMES = [
     "", "GND", "+3V3", "+5V", "VBAT", "SW1", "SW2", "BOOST5",
-    "ESP_TX", "ESP_RX", "BTN_UP", "BTN_DOWN", "BTN_OK",
+    "ESP_TX", "ESP_RX", "BTN_UP", "BTN_DOWN", "BTN_OK", "BTN_BACK",
     "OLED_SCK", "OLED_MOSI", "OLED_RST", "OLED_DC", "OLED_CS",
 ]
 NET = {name: i for i, name in enumerate(NET_NAMES)}
@@ -103,8 +103,11 @@ KIL_X0 = 30.0
 BTN_Y = 17.0
 BTN_PINS = ((-3.25, -2.25), (3.25, -2.25), (3.25, 2.25), (-3.25, 2.25))
 # pins 1,2 = north row (signal), 3,4 = south row (ground)
-BTN_CENTERS = ((-18.0, BTN_Y), (0.0, BTN_Y), (18.0, BTN_Y))
-BTN_NETS = (NET["BTN_UP"], NET["BTN_DOWN"], NET["BTN_OK"])  # UP | DOWN | OK
+# West -> east: UP | DOWN | OK | BACK (row centred on the board; 16.5 mm pitch
+# keeps the outer pins clear of the J3-1 GND drop, the J3-22 GND link and the
+# VBAT riser at x = 30).
+BTN_CENTERS = ((-24.75, BTN_Y), (-8.25, BTN_Y), (8.25, BTN_Y), (24.75, BTN_Y))
+BTN_NETS = (NET["BTN_UP"], NET["BTN_DOWN"], NET["BTN_OK"], NET["BTN_BACK"])
 
 # Power headers (1x4) in the east column
 CHG_Y, BST_Y = 6.0, -2.0
@@ -124,6 +127,7 @@ devkit_nets = {
     ("J1", 12): NET["OLED_RST"], ("J1", 15): NET["OLED_DC"],
     ("J1", 16): NET["OLED_CS"], ("J1", 17): NET["OLED_MOSI"],
     ("J1", 18): NET["OLED_SCK"], ("J1", 21): NET["+5V"],
+    ("J1", 19): NET["BTN_BACK"],   # GPIO13: BACK button (MISO pin reused)
     ("J3", 1): NET["GND"], ("J3", 21): NET["GND"], ("J3", 22): NET["GND"],
     ("J3", 4): NET["BTN_OK"], ("J3", 5): NET["BTN_DOWN"], ("J3", 6): NET["BTN_UP"],
 }
@@ -166,7 +170,7 @@ for (bx, by), net in zip(BTN_CENTERS, BTN_NETS):
         n = net if i <= 2 else NET["GND"]
         pad("SW_BTN", f"{bx:.0f}_{i}", bx + dx, by + dy, n,
             size=1.6, drill=0.9)
-for (bx, _), label in zip(BTN_CENTERS, ("UP", "DOWN", "OK")):
+for (bx, _), label in zip(BTN_CENTERS, ("UP", "DOWN", "OK", "BACK")):
     silk_text(bx, BTN_Y + 5.2, label, 1.0)
 
 # --- TP4056 / MT3608 wire headers ----------------------------------------------
@@ -225,7 +229,7 @@ route(NET["GND"], F, [(KIL_X0 + 2.54, KIL_Y), (KIL_X0 + 2.54, -28.5)], TRACK_POW
 route(NET["GND"], F, [(-33.5, GND_BB_Y), (KIL_X0 + 2.54, GND_BB_Y)], TRACK_POWER)    # backbone
 route(NET["GND"], F, [dk_pin("J3", 1), (-29.97, GND_BB_Y)], TRACK_POWER)        # J3-1 to backbone
 route(NET["GND"], F, [dk_pin("J3", 22), (23.37, GND_BB_Y)], TRACK_POWER)        # J3-22 link
-for (bx, _), (dxn, dxs) in zip(BTN_CENTERS, ((-3.25, None), (-3.25, None), (-3.25, None))):
+for (bx, _), (dxn, dxs) in zip(BTN_CENTERS, ((-3.25, None),) * 4):
     route(NET["GND"], F, [(bx - 3.25, BTN_Y + 2.25), (bx - 3.25, GND_BB_Y)], TRACK_POWER)
     route(NET["GND"], F, [(bx - 3.25, BTN_Y + 2.25), (bx + 3.25, BTN_Y + 2.25)], TRACK_POWER)
 # east column: J_BOOST-2 down through J_CHG-2 and J_BAT-2 to the backbone
@@ -287,17 +291,41 @@ route(NET["OLED_MOSI"], B, [(10.67, -21.5), (-1.38, -21.5)], TRACK_SIGNAL)
 via(NET["OLED_MOSI"], -1.38, -21.5)
 route(NET["OLED_MOSI"], F, [(-1.38, -21.5), (-1.38, OLED_Y)], TRACK_SIGNAL)
 
-# --- Buttons (J3-4/5/6 nest outward to the three buttons) --------------------------------------
-route(NET["BTN_UP"], F, [dk_pin("J3", 6), (-17.27, 13.4), (-14.75, 13.4),
-                         (-14.75, BTN_Y - 2.25)], TRACK_SIGNAL)
-route(NET["BTN_UP"], F, [(-21.25, BTN_Y - 2.25), (-14.75, BTN_Y - 2.25)], TRACK_SIGNAL)
-route(NET["BTN_DOWN"], F, [dk_pin("J3", 5), (-19.81, 16.4), (3.25, 16.4),
-                           (3.25, BTN_Y - 2.25)], TRACK_SIGNAL)
-route(NET["BTN_DOWN"], F, [(-3.25, BTN_Y - 2.25), (3.25, BTN_Y - 2.25)], TRACK_SIGNAL)
-route(NET["BTN_OK"], F, [dk_pin("J3", 4), (-22.35, 13.2), (-26.5, 13.2),
-                         (-26.5, 17.6), (21.25, 17.6),
-                         (21.25, BTN_Y - 2.25)], TRACK_SIGNAL)
-route(NET["BTN_OK"], F, [(14.75, BTN_Y - 2.25), (21.25, BTN_Y - 2.25)], TRACK_SIGNAL)
+# --- Buttons (UP/DOWN/OK on J3-4/5/6, BACK on J1-19 = GPIO13) -----------------
+# The button row is centred while the J3 source pins sit on the west half, so
+# UP (source east, button west) and OK (source west, button east) point at each
+# other and cannot share a layer. UP therefore stays on the front and runs west
+# along y = 13.0; DOWN and OK hop to the back layer and run east along the
+# stacked lanes y = 16.2 / 17.3 between the signal and GND pin rows. BACK
+# arrives from the north row (J1-19): it hops to the back layer, crosses the
+# socket's east end (past J1-22/J3-22) and comes back up between the rows.
+route(NET["BTN_UP"], F, [dk_pin("J3", 6), (-17.27, 13.0), (-28.0, 13.0)])
+route(NET["BTN_UP"], F, [(-28.0, 13.0), (-28.0, 14.75)])
+route(NET["BTN_UP"], F, [(-21.5, 13.0), (-21.5, 14.75)])
+route(NET["BTN_UP"], F, [(-28.0, 14.75), (-21.5, 14.75)])
+route(NET["BTN_DOWN"], F, [dk_pin("J3", 5), (-19.81, 12.0)])
+via(NET["BTN_DOWN"], -19.81, 12.0)
+route(NET["BTN_DOWN"], B, [(-19.81, 12.0), (-19.81, 16.2), (-4.75, 16.2)])
+via(NET["BTN_DOWN"], -4.75, 16.2)
+route(NET["BTN_DOWN"], F, [(-4.75, 16.2), (-4.75, 14.75)])
+route(NET["BTN_DOWN"], F, [(-4.75, 14.75), (-11.5, 14.75)])
+route(NET["BTN_OK"], F, [dk_pin("J3", 4), (-22.35, 12.0)])
+via(NET["BTN_OK"], -22.35, 12.0)
+route(NET["BTN_OK"], B, [(-22.35, 12.0), (-22.35, 12.75), (-26.2, 12.75),
+                         (-26.2, 17.3), (5.0, 17.3)])
+via(NET["BTN_OK"], 5.0, 17.3)
+route(NET["BTN_OK"], F, [(5.0, 17.3), (5.0, 14.75)])
+route(NET["BTN_OK"], F, [(5.0, 14.75), (11.5, 14.75)])
+# BACK's west signal pin needs its own via: the J3-22 GND link at x = 23.37
+# runs between the two BACK pins all the way to the GND backbone.
+route(NET["BTN_BACK"], F, [dk_pin("J1", 19), (15.75, -12.9)])
+via(NET["BTN_BACK"], 15.75, -12.9)
+route(NET["BTN_BACK"], B, [(15.75, -12.9), (24.9, -12.9), (24.9, 12.9)])
+via(NET["BTN_BACK"], 24.9, 12.9)
+route(NET["BTN_BACK"], F, [(24.9, 12.9), (24.9, 14.75), (28.0, 14.75)])
+route(NET["BTN_BACK"], B, [(24.9, 12.9), (21.5, 12.9)])
+via(NET["BTN_BACK"], 21.5, 12.9)
+route(NET["BTN_BACK"], F, [(21.5, 12.9), (21.5, 14.75)])
 
 # ---------------------------------------------------------------------------
 # Geometry helpers / self-check

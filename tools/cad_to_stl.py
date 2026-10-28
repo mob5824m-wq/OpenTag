@@ -136,7 +136,8 @@ def front_shell(p):
              [p["oled_cx"], p["oled_cy"], ceiling])
     btns = [T(cyl(p["btn_hole"], p["wall"] + 0.02),
               [x, p["btn_dy"], ceiling])
-            for x in (-p["btn_dx"], 0, p["btn_dx"])]
+            for x in (-1.5 * p["btn_dx"], -0.5 * p["btn_dx"],
+                      0.5 * p["btn_dx"], 1.5 * p["btn_dx"])]
     # DevKit USB slot, left wall — cut through BOTH walls, then plug the
     # east wall back. A cut that stops flush on the cavity face leaves a
     # zero-thickness cap over the slot in manifold3d (OpenSCAD/CGAL does
@@ -320,7 +321,8 @@ def verify(p, front, back, cap):
             fails.append(msg)
             print(f"  FAIL {msg}")
 
-    for x in (-p["btn_dx"], 0, p["btn_dx"]):
+    for x in (-1.5 * p["btn_dx"], -0.5 * p["btn_dx"],
+              0.5 * p["btn_dx"], 1.5 * p["btn_dx"]):
         expect(ray_hits(front, [x, p["btn_dy"], 40], [0, 0, -1]) == [],
                f"button hole at x={x} not open")
     expect(ray_hits(front, [p["oled_cx"], p["oled_cy"], 40], [0, 0, -1]) == [],
