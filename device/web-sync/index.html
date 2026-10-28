@@ -11,7 +11,7 @@
     main{max-width:880px;margin:auto;padding:28px 18px 56px}.brand{display:flex;align-items:center;gap:12px;margin:4px 0 30px}.mark{background:var(--mint);color:#10131b;width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-weight:900;font-size:20px}.brand strong{font-size:20px;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);letter-spacing:1.5px;font-size:10px;font-weight:700}
     h1{font-size:clamp(30px,7vw,47px);line-height:1.06;letter-spacing:-1.7px;margin:0 0 12px}.lede{color:var(--muted);max-width:680px;margin:0 0 24px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.card{background:linear-gradient(145deg,#202735,#1a2029);border:1px solid #2b3442;border-radius:22px;padding:20px;margin:16px 0}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#697789}.dot.ok{background:var(--mint);box-shadow:0 0 14px #b6f36a77}.dot.err{background:var(--bad)}
     button,.filebtn{border:0;border-radius:13px;padding:12px 16px;background:var(--mint);color:#10131b;font-weight:750;cursor:pointer;font:inherit;font-size:13px}button.secondary,.filebtn{background:#2a3341;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:7px;flex:1;min-width:210px}.field label{font-size:12px;color:var(--muted);font-weight:650}input,select{width:100%;border:1px solid var(--line);background:#111720;color:var(--text);border-radius:12px;padding:12px 13px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--mint)}.sub{font-size:12px;color:var(--muted)}
-    .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px;white-space:nowrap}.tag.ok{color:var(--mint);border-color:#5b7135}.tag.bad{color:var(--bad);border-color:#7a4040}
+    .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.thumb{width:44px;height:44px;border-radius:9px;overflow:hidden;flex:none;background:#0d1219;display:flex;align-items:center;justify-content:center;color:#cfe3d0;font-size:18px;font-weight:800}.thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb.ghost{border:1px solid #293341}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px;white-space:nowrap}.tag.ok{color:var(--mint);border-color:#5b7135}.tag.bad{color:var(--bad);border-color:#7a4040}
     .notice{font-size:12px;color:var(--muted);border-left:3px solid var(--violet);padding:3px 0 3px 12px;margin:13px 0}.warning{color:#ffcc9b}.rule{height:1px;background:#2b3442;margin:17px 0}.foot{font-size:11px;color:var(--muted);max-width:700px;margin:22px 0 0}.hidden{display:none!important}
     #log{background:#0d1117;border:1px solid #232c39;border-radius:13px;padding:11px 13px;font:12px/1.6 ui-monospace,monospace;color:#a8b4c6;max-height:190px;overflow-y:auto;white-space:pre-wrap;margin-top:13px}
   </style>
@@ -19,7 +19,7 @@
 <body><main>
   <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
   <h1>Your tags,<br>ready to tap.</h1>
-  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — or re-sign and write them to blank NTAG215 tags with your TagMo key files.</p>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — with in-browser metadata and box art, and trigger emulation from your phone.</p>
   <section class="card">
     <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
@@ -45,14 +45,15 @@
   </section>
 
   <section class="card">
-    <strong>Amiibo signing keys</strong>
-    <p class="sub">To <b>write</b> a dump to a physical NTAG215, the device re-signs it (TagMo-style) with your <b>unfixed-info.bin</b> and <b>locked-secret.bin</b> key files — the same pair TagMo loads. A combined 160-byte retail key file also works. Files are identified by their embedded type string, stored in the device's NVS, and never bundled with this project or sent anywhere else.</p>
+    <strong>Amiibo signing keys <span style="opacity:.6">(advanced)</span></strong>
+    <p class="sub">OpenTag emulates amiibo — no physical tag writing needed. These keys are only for the optional advanced flow that survives on the device (long-press in its library writes to a real NTAG215, TagMo-style, using your <b>unfixed-info.bin</b> and <b>locked-secret.bin</b>). A combined 160-byte retail key file also works. Files are identified by their embedded type string, stored in the device's NVS, and never bundled with this project or sent anywhere else.</p>
     <div class="row"><label class="filebtn" for="keyFiles">Choose key .bin files</label><input id="keyFiles" class="hidden" type="file" accept=".bin,.dat,.retail" multiple><button id="uploadKeys" disabled>Upload keys</button><button id="keyStatusBtn" class="secondary" disabled>Check status</button><button id="forgetKeys" class="secondary" disabled>Forget keys</button></div>
     <div class="row" style="margin-top:10px"><span class="sub">Key state:</span>&nbsp;<span id="keyState" class="sub"><i>unknown — connect and check</i></span></div>
     <p class="sub warning">Only use key files you legally extracted yourself. Uploading them is your responsibility.</p>
   </section>
   <p class="foot">OpenTag is an independent open-source project. NFC writes replace the existing NDEF area of the selected NTAG215. Confirm on the device before writing; only use tags you own or are authorized to program.</p>
 </main>
+<script src="amiibo-db.js"></script>
 <script>
 (() => {
   const SERVICE = '9b9e0001-9d2a-4b72-9a0c-6a8f6f4d0001';
@@ -135,6 +136,77 @@
   function cleanName(raw) {
     const base = raw.split(/[\\/]/).pop().replace(/\.(bin|nfc|tag|dump)$/i, '').trim();
     return base.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 40);
+  }
+
+  // ---------- amiibo metadata (matched by filename against amiibo-db.js) ----------
+  // The amiibo ID inside a retail dump is AES-encrypted, so bins are matched
+  // by their file name: first a 16-hex-character amiibo ID (the usual dump
+  // naming convention, e.g. "0000000000340102.bin"), then a fuzzy match on
+  // the amiibo / character name ("mario smash.bin").
+  const DB = window.AMIIBO_DB || {};
+  const dbEntries = Object.entries(DB);
+  function dbLookup(id) {
+    const v = DB[id];
+    if (!v) return null;
+    return { id, name: v[0], series: v[1], type: v[2], game: v[3], year: v[4],
+             image: window.AMIIBO_IMAGE_BASE + 'icon_' + id.slice(0, 8) + '-' + id.slice(8) + '.png' };
+  }
+  function normName(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  const dbByNorm = new Map();
+  for (const [id, v] of dbEntries) {
+    const k = normName(v[0]);
+    if (!dbByNorm.has(k)) dbByNorm.set(k, []);
+    dbByNorm.get(k).push(id);
+  }
+  function amiiboFromFilename(name) {
+    const m = name.match(/[0-9a-f]{16}/i);
+    if (m) {
+      const hit = dbLookup(m[0].toLowerCase());
+      if (hit) return hit;
+    }
+    const hay = normName(name);
+    if (!hay) return null;
+    let best = null;
+    for (const [id, v] of dbEntries) {
+      const n = normName(v[0]);
+      if (n && n.length >= 3 && hay.includes(n)) {
+        if (!best || n.length > normName(best.name).length) best = dbLookup(id);
+      }
+    }
+    if (best) {
+      // Disambiguate same-name amiibo by series words in the file name.
+      const same = dbByNorm.get(normName(best.name)) || [best.id];
+      if (same.length > 1) {
+        for (const id of same) {
+          const seriesWords = normName(DB[id][1]);
+          if (seriesWords && hay.includes(seriesWords)) { best = dbLookup(id); break; }
+        }
+      }
+    }
+    return best;
+  }
+  // Thumbnail element: box-art image with a colored-initial fallback.
+  function amiiboThumb(name) {
+    const meta = amiiboFromFilename(name);
+    const wrap = document.createElement('div'); wrap.className = 'thumb';
+    if (!meta) {
+      wrap.classList.add('ghost');
+      wrap.textContent = '?';
+      return wrap;
+    }
+    const img = document.createElement('img');
+    img.alt = meta.name; img.loading = 'lazy'; img.src = meta.image;
+    img.onerror = () => {
+      img.remove();
+      wrap.classList.add('ghost');
+      let h = 0;
+      for (const ch of meta.id) h = (h * 31 + parseInt(ch, 16)) >>> 0;
+      wrap.style.background = 'hsl(' + (h % 360) + ' 45% 32%)';
+      wrap.textContent = meta.name.charAt(0).toUpperCase();
+    };
+    wrap.append(img);
+    wrap.title = meta.name + ' — ' + meta.series;
+    return wrap;
   }
 
   // ---------- minimal zip reader (stored + deflate-raw, no deps) ----------
@@ -251,13 +323,19 @@
     }
     parsed.forEach((item, i) => {
       const row = document.createElement('div'); row.className = 'item';
+      row.append(amiiboThumb(item.name));
       const tag = document.createElement('span'); tag.className = 'tag ' + (item.valid ? 'ok' : 'bad');
       tag.textContent = item.valid ? 'NTAG215' : 'INVALID';
       const copy = document.createElement('div'); copy.className = 'copy';
       const strong = document.createElement('strong'); strong.textContent = item.name;
       const small = document.createElement('small');
+      const meta = amiiboFromFilename(item.name);
+      const metaBits = meta ? [meta.name, meta.series, meta.type, meta.year].filter(Boolean).join(' · ') : 'no metadata match';
       small.textContent = item.valid ? `${item.data.length} B · UID ${item.uidHex}` : (item.reason || 'rejected');
-      copy.append(strong, small);
+      const metaLine = document.createElement('small');
+      metaLine.textContent = metaBits;
+      if (!meta) metaLine.style.opacity = '0.6';
+      copy.append(strong, small, metaLine);
       const rm = document.createElement('button'); rm.className = 'secondary'; rm.textContent = '×';
       rm.setAttribute('aria-label', 'Remove'); rm.onclick = () => { parsed.splice(i, 1); renderParsed(); };
       row.append(tag, copy, rm); root.append(row);
@@ -325,33 +403,36 @@
     }
     deviceLib.forEach(name => {
       const row = document.createElement('div'); row.className = 'item';
+      row.append(amiiboThumb(name));
       const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'BIN';
       const copy = document.createElement('div'); copy.className = 'copy';
       const strong = document.createElement('strong'); strong.textContent = name;
       copy.append(strong);
+      const meta = amiiboFromFilename(name);
+      if (meta) {
+        const small = document.createElement('small');
+        small.textContent = [meta.name, meta.series, meta.type, meta.year].filter(Boolean).join(' · ');
+        copy.append(small);
+      } else {
+        const small = document.createElement('small');
+        small.textContent = 'no metadata match';
+        small.style.opacity = '0.6';
+        copy.append(small);
+      }
       const emu = document.createElement('button'); emu.textContent = 'Emulate';
       emu.onclick = async () => {
         try { await sendCmd('AMI:EMU:' + name); await expect('OK:emulating', 5000); } catch (e) { log(e.message, 'err'); }
-      };
-      const wr = document.createElement('button'); wr.textContent = 'Write to tag';
-      wr.title = 'Arm the device to re-sign and write this amiibo to a blank NTAG215';
-      wr.onclick = async () => {
-        try {
-          await sendCmd('AMI:WRITE:' + name);
-          await expect('OK:write-armed', 4000);
-          log('Armed. Tap a BLANK NTAG215 on the device antenna — it will be re-signed and written, then verified. Locking is confirmed on the device.', 'ok');
-        } catch (e) { log(e.message, 'err'); }
       };
       const del = document.createElement('button'); del.className = 'secondary'; del.textContent = '×';
       del.setAttribute('aria-label', 'Delete from device');
       del.onclick = async () => {
         try { await sendCmd('AMI:DEL:' + name); await expect('OK:ami-deleted', 3000); await refreshLibrary(); } catch (e) { log(e.message, 'err'); }
       };
-      row.append(tag, copy, emu, wr, del); root.append(row);
+      row.append(tag, copy, emu, del); root.append(row);
     });
   }
 
-  // ---------- amiibo signing keys ----------
+  // ---------- amiibo signing keys (advanced: physical tag writing) ----------
 
   // Mirror of the device-side check: 80-byte key files carry their type in a
   // 14-byte NUL-terminated string at offset 16.

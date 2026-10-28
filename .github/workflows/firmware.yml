@@ -1,0 +1,51 @@
+# Builds the OpenTag firmware with PlatformIO and attaches firmware.bin to a
+# GitHub release, so `tools/update_opentag.py` can grab the latest image and
+# flash only the app partition (amiibo library untouched).
+#
+# Triggers:
+#   * push of a v* tag  -> creates a release with the firmware attached
+#   * workflow_dispatch -> build-only check
+name: firmware
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: device
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        run: pio run -e opentag_s3
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: device/.pio/build/opentag_s3/firmware.bin
+
+      - name: Attach firmware.bin to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          cp .pio/build/opentag_s3/firmware.bin "opentag-firmware-${TAG}.bin"
+          gh release create "$TAG" --title "OpenTag $TAG" --generate-notes --repo "$GITHUB_REPOSITORY" || true
+          gh release upload "$TAG" "opentag-firmware-${TAG}.bin" --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenTag — device UI preview</title>
+<style>
+  :root { --bg:#0b0f14; --card:#141a22; --line:#293341; --mint:#b5f7d0; --muted:#9cf3c0; --text:#e8f2ea; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 ui-monospace,Menlo,Consolas,monospace; display:flex; flex-direction:column; align-items:center; padding:28px 16px 60px; }
+  h1 { font-size:17px; letter-spacing:.5px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin:0 0 22px; text-align:center; max-width:560px; }
+  .stage { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
+  .oled-case { background:#1b1410; border:1px solid #33241a; border-radius:26px; padding:26px 24px 22px; box-shadow:0 18px 50px #000a inset, 0 8px 30px #0009; }
+  .bezel { background:#000; border-radius:14px; padding:14px; border:2px solid #0a0a0a; }
+  canvas { display:block; width:384px; height:384px; image-rendering:pixelated; border-radius:6px; background:#101010; }
+  .btnrow { display:flex; gap:14px; justify-content:center; margin-top:20px; }
+  .hwbtn { width:74px; height:74px; border-radius:50%; border:2px solid #3a3327; background:linear-gradient(#2b2620,#191512); color:#cfe3d0; font:700 12px ui-monospace,monospace; cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:none; box-shadow:0 5px 0 #0a0806; }
+  .hwbtn:active, .hwbtn.down { transform:translateY(3px); box-shadow:0 2px 0 #0a0806; }
+  .hwbtn.ok { border-color:#3f5a35; }
+  .lbl { text-align:center; color:var(--muted); font-size:11px; margin-top:8px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:15px; padding:18px; width:330px; }
+  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--mint); }
+  .panel .row { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
+  .panel button { background:#1d2733; color:var(--text); border:1px solid #31404f; border-radius:9px; padding:8px 12px; font:12px ui-monospace,monospace; cursor:pointer; }
+  .panel button:hover { border-color:#5b7135; }
+  .panel input[type=text] { background:#0d1219; border:1px solid var(--line); color:var(--text); border-radius:8px; padding:7px 9px; font:12px ui-monospace,monospace; width:150px; }
+  #statusline { margin-top:10px; color:var(--muted); font-size:11px; min-height:34px; }
+  .note { color:#8fa89a; font-size:11px; margin-top:12px; }
+  kbd { background:#1d2733; border:1px solid #31404f; border-radius:5px; padding:1px 6px; font-size:11px; }
+</style>
+</head>
+<body>
+<h1>OPENTAG — DEVICE UI PREVIEW</h1>
+<p class="sub">Simulation of the firmware's OLED interface (SSD1351, 128×128) for design testing. This page talks to no hardware — every screen, color and pixel position is a faithful port of <code>drawScreen()</code> in <code>device/src/main.cpp</code>. Long-press OK by holding the button ~1&nbsp;s.</p>
+
+<div class="stage">
+  <div>
+    <div class="oled-case"><div class="bezel"><canvas id="oled" width="128" height="128"></canvas></div></div>
+    <div class="btnrow">
+      <div><button class="hwbtn" id="bUp">UP</button><div class="lbl">GPIO42</div></div>
+      <div><button class="hwbtn ok" id="bOk">OK</button><div class="lbl">GPIO1</div></div>
+      <div><button class="hwbtn" id="bDown">DOWN</button><div class="lbl">GPIO2</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>SIMULATED DEVICE STATE</h2>
+    <div class="row">BLE connected <input type="checkbox" id="simBle" checked></div>
+    <div class="row">PN532Killer present <input type="checkbox" id="simNfc" checked></div>
+    <div class="row">Keys loaded <input type="checkbox" id="simKeys"></div>
+    <div class="row"><input type="text" id="simNote" value="Hello from OpenTag" maxlength="40"> <button id="setNote">Set pending note</button></div>
+    <div class="row">
+      <button id="simTap">Simulate: tap NTAG215</button>
+      <button id="simConsole">Console taps tag</button>
+    </div>
+    <div class="row">
+      <button id="addAmiibo">Add amiibo to library</button>
+      <button id="delAmiibo">Remove selected</button>
+    </div>
+    <div class="row" style="color:#8fa89a;font-size:11px">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> = OK (hold for long press)</div>
+    <div id="statusline">UI state: MENU</div>
+    <p class="note">"Simulate: tap NTAG215" places a tag on the antenna — used by the note-write screen, and (advanced) the amiibo write screen. "Console taps tag" imitates a Switch reading the emulated tag.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- SSD1351 simulation -------------------------------------------------
+  const cv = document.getElementById('oled'), ctx = cv.getContext('2d');
+  const S = 3; // canvas is 128x128 logical, CSS-scaled; draw at 1x with imageSmoothing off
+  function rgb565(v) {
+    const r = ((v >> 11) & 0x1F) * 255 / 31 | 0, g = ((v >> 5) & 0x3F) * 255 / 63 | 0, b = (v & 0x1F) * 255 / 31 | 0;
+    return `rgb(${r},${g},${b})`;
+  }
+  const BG = 0x1082, MINT = 0xB7EF, LAVENDER = 0xC5DF, WHITE = 0xFFFF, MUTED = 0x9CF3, RED = 0xF986;
+  const C = { BG: rgb565(BG), MINT: rgb565(MINT), LAVENDER: rgb565(LAVENDER), WHITE: rgb565(WHITE), MUTED: rgb565(MUTED), RED: rgb565(RED) };
+  let curX = 0, curY = 0, curColor = C.WHITE, wrap = false;
+  ctx.fillStyle = C.BG; ctx.fillRect(0, 0, 128, 128);
+  ctx.font = '5px monospace'; // will be replaced per text size
+
+  function setTextColor(c) { curColor = c; }
+  function setTextSize(s) { ctx.font = (s * 6 - 1) + 'px ui-monospace,Menlo,monospace'; }
+  function setCursor(x, y) { curX = x; curY = y; }
+  function setTextWrap(w) { wrap = w; }
+  function print(s, hex) {
+    if (hex !== undefined) s = s.toString(16).toUpperCase();
+    ctx.fillStyle = curColor;
+    let x = curX;
+    for (const ch of String(s)) {
+      if (wrap && x + 6 > 128) { x = 0; curY += 12; }
+      ctx.fillText(ch, x, curY + 5); // baseline tweak: emulate top-left cursor
+      x += 6;
+    }
+    curX = x;
+  }
+  function fillScreen(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, 128, 128); }
+  function drawFastHLine(x, y, w, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, 1); }
+
+  // ---- device state (mirrors main.cpp globals) -----------------------------
+  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6 };
+  let uiState = UI.MENU, menuIndex = 0, uiMessage = '';
+  let pendingPresent = true, pendingKind = 'TEXT', pendingValue = 'Hello from OpenTag';
+  let bleConnected = true, nfcReady = true, keysReady = false;
+  let amiiboNames = ['mario.bin', 'zelda.bin', 'kirby.bin'];
+  let amiCount = 3, amiSelected = 0, amiTop = 0;
+  let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+  let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
+  const statusline = document.getElementById('statusline');
+  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM'];
+  function setStatus(t) { statusline.textContent = 'UI state: ' + stateNames[uiState] + (t ? ' — ' + t : ''); }
+
+  // ---- drawScreen port ------------------------------------------------------
+  function drawHeader() {
+    setTextColor(C.MINT); setCursor(8, 7); print('OPENTAG');
+    setTextColor(C.MUTED); setCursor(84, 7); print(bleConnected ? 'BLE ON' : 'BLE');
+    drawFastHLine(8, 21, 112, rgb565(0x4208));
+  }
+  function drawScreen() {
+    fillScreen(C.BG); setTextWrap(false); setTextSize(1); drawHeader();
+    if (uiState === UI.WAIT_TAG) {
+      setTextColor(C.WHITE); setCursor(8, 37); print('Ready to write');
+      setTextColor(C.MUTED); setCursor(8, 55); print('Tap an NTAG215 tag');
+      setCursor(8, 70); print('to the NFC antenna.');
+      setTextColor(C.MINT); setCursor(8, 105); print('UP/DOWN/OK: cancel');
+    } else if (uiState === UI.TAG_READY) {
+      setTextColor(C.MINT); setCursor(8, 35); print('NTAG215 detected');
+      setTextColor(C.WHITE); setCursor(8, 55); print('OK to write NDEF');
+      setTextColor(C.MUTED); setCursor(8, 73); print(pendingKind);
+      setCursor(8, 87); print(String(pendingValue).substring(0, 18));
+      setTextColor(C.RED); setCursor(8, 111); print('Existing data replaced');
+    } else if (uiState === UI.LIBRARY) {
+      setTextColor(C.MINT); setCursor(8, 27); print('AMIIBO LIBRARY');
+      if (amiCount === 0) {
+        setTextColor(C.MUTED); setCursor(8, 50); print('Empty.');
+        setCursor(8, 66); print('Upload a .zip of your');
+        setCursor(8, 80); print('dumps via BLE sync.');
+      } else {
+        const visible = amiCount < 5 ? amiCount : 5;
+        if (amiSelected < amiTop) amiTop = amiSelected;
+        if (amiSelected >= amiTop + visible) amiTop = amiSelected - visible + 1;
+        for (let i = 0; i < visible; i++) {
+          const idx = amiTop + i, y = 34 + i * 15;
+          setTextColor(idx === amiSelected ? C.MINT : C.MUTED);
+          setCursor(8, y); print(idx === amiSelected ? '> ' : '  ');
+          print(String(amiiboNames[idx]).substring(0, 16));
+        }
+        setTextColor(C.MUTED); setCursor(8, 114);
+        print(String(amiSelected + 1)); print('/'); print(String(amiCount));
+        print(' OK:emul hold:write');
+      }
+    } else if (uiState === UI.WRITE_TAG) {
+      setTextColor(C.MINT); setCursor(8, 30); print('WRITE AMIIBO');
+      setTextColor(C.WHITE); setCursor(8, 48); print(String(writeName).substring(0, 16));
+      setTextColor(C.MUTED); setCursor(8, 66); print('Tap a BLANK NTAG215');
+      setCursor(8, 80); print('to the NFC antenna.');
+      setTextColor(C.RED); setCursor(8, 100); print('Overwrites the tag');
+      setTextColor(C.MINT); setCursor(8, 116); print(uiMessage.length ? uiMessage.substring(0, 19) : 'UP/DOWN/OK: cancel');
+    } else if (uiState === UI.LOCK_CONFIRM) {
+      setTextColor(C.MINT); setCursor(8, 26); print('WRITE VERIFIED');
+      setTextColor(C.WHITE); setCursor(8, 44); print('Lock this tag?');
+      setTextColor(C.RED); setCursor(8, 60); print('IRREVERSIBLE!');
+      setTextColor(C.MUTED); setCursor(8, 80); print('HOLD OK: lock');
+      setCursor(8, 96); print('short OK: skip lock');
+      setCursor(8, 112); print('(auto-skips in 15 s)');
+    } else if (uiState === UI.EMULATE) {
+      setTextColor(C.MINT); setCursor(8, 32); print('EMULATING');
+      setTextColor(C.WHITE); setCursor(8, 48); print(String(emuName).substring(0, 16));
+      setTextColor(C.MUTED); setCursor(8, 66); print('UID ');
+      let first = true;
+      for (const b of emuUid) { if (!first) print(':'); first = false; if (b < 0x10) print('0'); print(b, 16); }
+      setCursor(8, 82); print(emuMode === 1 ? 'NDEF note' : 'Tap console to use');
+      setTextColor(C.LAVENDER); setCursor(8, 100); print('Killer slot 0 active');
+      setTextColor(C.MINT); setCursor(8, 116); print('UP/DOWN/OK: stop');
+    } else {
+      const items = ['Write NDEF note', 'Emulate NDEF note', 'Amiibo library', 'BLE sync', 'Clear note'];
+      for (let i = 0; i < 5; i++) {
+        const y = 28 + i * 16;
+        setTextColor(i === menuIndex ? C.MINT : C.MUTED);
+        setCursor(8, y); print(i === menuIndex ? '> ' : '  '); print(items[i]);
+      }
+      setTextColor(C.WHITE); setCursor(8, 116);
+      if (pendingPresent) { print(pendingKind); print(': '); print(String(pendingValue).substring(0, 12)); }
+      else print('Sync a text or URL');
+      if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
+    }
+    setStatus(null);
+  }
+
+  // ---- input handling with press/hold/release ------------------------------
+  function pressed(state) {
+    // mirrors handleButtons() in main.cpp
+    if (uiState === UI.TAG_READY) {
+      if (state === 'up' || state === 'down') { uiState = UI.MENU; uiMessage = 'Write cancelled'; }
+      if (state === 'ok') {
+        const ok = pendingPresent;  // simulated write+verify success
+        uiState = UI.MENU; uiMessage = ok ? 'NDEF verified OK' : 'Write/verify failed';
+        tagCounter++;
+      }
+    } else if (uiState === UI.WAIT_TAG) {
+      uiState = UI.MENU; uiMessage = 'Scan cancelled';
+    } else if (uiState === UI.LIBRARY) {
+      if (state === 'up' && amiCount) amiSelected = (amiSelected + amiCount - 1) % amiCount;
+      if (state === 'down' && amiCount) amiSelected = (amiSelected + 1) % amiCount;
+      if (state === 'ok-hold') {
+        if (amiCount === 0) { uiState = UI.MENU; }
+        else if (!nfcReady) { uiMessage = 'PN532Killer absent'; }
+        else if (!keysReady) { uiMessage = 'Upload key files first'; }
+        else armWrite(amiiboNames[amiSelected]);
+      } else if (state === 'ok') {
+        if (amiCount === 0) { uiState = UI.MENU; }
+        else if (!nfcReady) { uiMessage = 'PN532Killer absent'; }
+        else startEmulation(amiiboNames[amiSelected], 2);
+      }
+    } else if (uiState === UI.WRITE_TAG) {
+      uiState = UI.MENU; writeArmed = false; uiMessage = 'Write cancelled';
+    } else if (uiState === UI.LOCK_CONFIRM) {
+      if (state === 'ok-hold') { uiState = UI.MENU; uiMessage = 'Tag locked'; }
+      else if (state === 'ok' || state === 'up' || state === 'down') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
+    } else if (uiState === UI.EMULATE) {
+      emuMode = 0; emuName = ''; uiState = UI.MENU; uiMessage = 'Emulation stopped';
+    } else { // MENU
+      if (state === 'up') { menuIndex = (menuIndex + 4) % 5; uiMessage = ''; }
+      if (state === 'down') { menuIndex = (menuIndex + 1) % 5; uiMessage = ''; }
+      if (state === 'ok') {
+        if (menuIndex === 0) {
+          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
+          else if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { uiState = UI.WAIT_TAG; uiMessage = ''; }
+        } else if (menuIndex === 1) {
+          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
+          else if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { uiMessage = ''; startEmulation('NDEF note', 1); }
+        } else if (menuIndex === 2) {
+          amiSelected = 0; amiTop = 0; uiState = UI.LIBRARY; uiMessage = '';
+        } else if (menuIndex === 3) {
+          uiMessage = bleConnected ? 'Connected: use web sync' : 'OpenTag BLE is advertising';
+        } else {
+          pendingPresent = false; pendingValue = ''; pendingKind = 'TEXT'; uiMessage = 'Pending note cleared';
+        }
+      }
+    }
+    drawScreen();
+  }
+
+  function armWrite(name) {
+    writeName = name; writeArmed = true; uiState = UI.WRITE_TAG; uiMessage = '';
+  }
+  function startEmulation(label, mode) {
+    emuMode = mode; emuName = label; uiState = UI.EMULATE;
+    if (mode === 2) { for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256); }
+  }
+
+  // ---- buttons: click = short press, hold ~1 s = long press ----------------
+  function bindButton(el, kind) {
+    let timer = null, longFired = false;
+    const down = e => { e.preventDefault(); el.classList.add('down'); longFired = false;
+      timer = setTimeout(() => { longFired = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000); };
+    const up = e => { e.preventDefault(); el.classList.remove('down');
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (!longFired) pressed(kind); };
+    el.addEventListener('mousedown', down); el.addEventListener('mouseup', up); el.addEventListener('mouseleave', up);
+    el.addEventListener('touchstart', down, { passive: false }); el.addEventListener('touchend', up);
+  }
+  bindButton(document.getElementById('bUp'), 'up');
+  bindButton(document.getElementById('bDown'), 'down');
+  bindButton(document.getElementById('bOk'), 'ok');
+
+  const keymap = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok' };
+  let keyTimer = null, keyLong = false;
+  document.addEventListener('keydown', e => {
+    const kind = keymap[e.key]; if (!kind || e.repeat) return;
+    e.preventDefault(); keyLong = false;
+    document.getElementById(kind === 'ok' ? 'bOk' : kind === 'up' ? 'bUp' : 'bDown').classList.add('down');
+    keyTimer = setTimeout(() => { keyLong = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000);
+  });
+  document.addEventListener('keyup', e => {
+    const kind = keymap[e.key]; if (!kind) return;
+    document.getElementById(kind === 'ok' ? 'bOk' : kind === 'up' ? 'bUp' : 'bDown').classList.remove('down');
+    if (keyTimer) { clearTimeout(keyTimer); keyTimer = null; }
+    if (!keyLong) pressed(kind);
+  });
+
+  // ---- environment simulation ----------------------------------------------
+  document.getElementById('simBle').onchange = e => { bleConnected = e.target.checked; drawScreen(); };
+  document.getElementById('simNfc').onchange = e => { nfcReady = e.target.checked; drawScreen(); };
+  document.getElementById('simKeys').onchange = e => { keysReady = e.target.checked; drawScreen(); };
+  document.getElementById('setNote').onclick = () => {
+    const v = document.getElementById('simNote').value;
+    pendingValue = v; pendingKind = 'TEXT'; pendingPresent = v.length > 0;
+    if (emuMode === 1 && uiState === UI.EMULATE) uiMessage = 'Note updated live';
+    else if (uiState === UI.MENU) uiMessage = 'NDEF note synced';
+    drawScreen();
+  };
+  document.getElementById('simTap').onclick = () => {
+    if (uiState === UI.WAIT_TAG) { uiState = UI.TAG_READY; uiMessage = ''; }
+    else if (uiState === UI.WRITE_TAG) {
+      // Simulated TagMo-style write: sign, write pages, verify.
+      uiMessage = 'Signing + writing'; drawScreen();
+      setTimeout(() => { writeArmed = false; uiState = UI.LOCK_CONFIRM; lockAskedAt = Date.now(); uiMessage = ''; drawScreen(); }, 700);
+      return;
+    } else if (uiState === UI.MENU) uiMessage = 'Nothing waiting for a tag';
+    else uiMessage = 'Tag ignored in this state';
+    drawScreen();
+  };
+  document.getElementById('simConsole').onclick = () => {
+    if (uiState === UI.EMULATE) uiMessage = 'Console read the tag';
+    else uiMessage = 'Not emulating';
+    drawScreen();
+  };
+  document.getElementById('addAmiibo').onclick = () => {
+    const n = 'amiibo' + (amiiboNames.length + 1) + '.bin';
+    if (amiiboNames.length < 128) { amiiboNames.push(n); amiCount = amiiboNames.length; }
+    drawScreen();
+  };
+  document.getElementById('delAmiibo').onclick = () => {
+    if (amiCount) { amiiboNames.splice(amiSelected, 1); amiCount = amiiboNames.length;
+      if (amiSelected >= amiCount && amiSelected > 0) amiSelected = amiCount - 1; }
+    drawScreen();
+  };
+
+  // lock-confirm auto-skip after 15 s
+  setInterval(() => { if (uiState === UI.LOCK_CONFIRM && Date.now() - lockAskedAt > 15000) { uiState = UI.MENU; uiMessage = 'Left unlocked'; drawScreen(); } }, 500);
+
+  drawScreen();
+})();
+</script>
+</body>
+</html>

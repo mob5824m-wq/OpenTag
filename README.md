@@ -17,18 +17,32 @@ guide, and parts list.
 - **Emulate the NDEF note** — present the note as a virtual, read-only
   NTAG215; phones read it like any NDEF tag.
 - **Amiibo library** — upload a `.zip` of your own NTAG215 `.bin` dumps
-  through the web page (unpacked and validated in the browser), browse them
-  on the OLED, and tap a console with the dump's own 7-byte UID presented by
-  the NFC emulator.
-- **Write amiibo to physical tags (TagMo-style)** — with your own
-  `unfixed-info.bin` / `locked-secret.bin` key files uploaded over BLE, the
-  device re-signs any dump in the library for a blank NTAG215's own UID
-  (decrypt → patch UID → re-encrypt + re-HMAC), writes pages 3–134, sets the
-  derived PWD/PACK, verifies by read-back, and can optionally lock the tag
-  (irreversible — confirmed on the device with a long OK press).
+  through the web page or the **Android app**, browse them on the OLED, and
+  tap a console with the dump's own 7-byte UID presented by the NFC emulator.
+  **OpenTag emulates amiibo — that's the product**; bins show metadata and
+  box art in the web page and app, matched by file name against a bundled
+  932-entry amiibo database.
+- **Android app** ([`android-app/`](android-app/)) — native Kotlin app
+  (no dependencies) for BLE file dumping: pick `.bin` dumps or a `.zip` of
+  them, upload to the device, browse the on-device library, and trigger
+  emulation.
+- **One-command firmware updates** ([`tools/update_opentag.py`](tools/update_opentag.py))
+  — plug the OpenTag into a computer and run the script: it downloads the
+  latest firmware release from GitHub (CI builds and attaches it on every
+  `v*` tag) and flashes **only the app partition** — your amiibo library,
+  settings, and note survive every update.
+- **Advanced: write amiibo to physical NTAG215 tags (TagMo-style)** — with
+  your own `unfixed-info.bin` / `locked-secret.bin` key files uploaded over
+  BLE, the device can re-sign a dump for a blank tag's own UID, write and
+  verify it, and optionally lock it (irreversible, long-press confirm on the
+  device). Emulation needs none of this; the flow remains available behind a
+  long-press in the device library.
 - **BLE sync** — Web Bluetooth page with note management, .zip upload, device
-  library listing, remote emulate/delete, key-file upload, and write-to-tag
-  arming.
+  library listing with metadata + box art, remote emulate/delete.
+- **Web preview of the device UI** ([`device/web-preview/`](device/web-preview/))
+  — a browser simulation of the OLED interface (every screen, color, and
+  pixel position ported from `drawScreen()`) with working buttons and
+  long-press, for UI testing with no hardware attached.
 
 ## Hardware architecture
 
@@ -44,8 +58,31 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/opentag-carrier.kicad_pcb` | 90 × 60 mm 2-layer carrier, all through-hole |
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
-| `hardware/cad/opentag_shell.scad` | Parametric 2-part handheld shell + button caps |
+| `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps (OpenSCAD source; `.cad` is the project's extension) |
 | `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
+
+## Updating the firmware (keeps your amiibos)
+
+Push a `v*` tag and CI (`.github/workflows/firmware.yml`) builds the firmware
+and attaches it to a GitHub release. Then, on any computer with Python:
+
+```sh
+pip install esptool
+python tools/update_opentag.py            # auto port, latest release
+python tools/update_opentag.py --tag v1.2 # a specific release
+python tools/update_opentag.py --bin firmware.bin --port COM5
+```
+
+The script reads the app partition offset from `device/partitions_16mb.csv`
+and flashes **only that partition** — the LittleFS amiibo library, NVS
+settings, and pending note are never touched. If no release asset exists it
+falls back to building locally with `pio run`.
+
+## Android app
+
+Open [`android-app/`](android-app/) in Android Studio and run — see
+[`android-app/README-ANDROID.md`](android-app/README-ANDROID.md). Platform
+APIs only, no dependencies; minSdk 23.
 
 ## Build and flash
 
@@ -93,14 +130,32 @@ in Chrome/Edge, connect over BLE, then:
   zero/newline-padded, N2 Elite 32-byte header, Flipper page lists), validates
   each dump (UID BCC, NTAG215 capability container), and copies the normalized
   540-byte image to the device in BLE chunks;
-- list, emulate, or delete library entries on the device;
-- upload your **amiibo signing keys** (`unfixed-info.bin` +
-  `locked-secret.bin`, or one combined 160-byte retail file — identified by
-  the embedded type string, stored in device NVS, forgettable any time);
-- arm **Write to tag** for a library entry: the device then waits for a blank
-  NTAG215 on its antenna.
+- every bin — local and on-device — shows **amiibo metadata and box art**,
+  matched by file name (16-hex amiibo ID first, then a fuzzy name match)
+  against `device/web-sync/amiibo-db.js`, a 932-entry database generated from
+  the community AmiiboAPI project. The amiibo ID inside a retail dump is
+  AES-encrypted, so file names are the reliable key. Images load from
+  AmiiboAPI's CDN with a colored-initial fallback offline;
+- list, emulate, or delete library entries on the device — emulation is the
+  point; there is no per-amiibo write button;
+- (advanced) upload your **amiibo signing keys** (`unfixed-info.bin` +
+  `locked-secret.bin`, or one combined 160-byte retail file) if you also use
+  the device's long-press physical-tag write flow.
 
 Nothing is uploaded to any server; all processing happens in your browser.
+
+### Amiibo metadata database
+
+[`amiibo.json`](amiibo.json) (repository root) is the canonical,
+human-editable database — 932 entries mapping each 16-hex amiibo ID to
+`[name, amiiboSeries, type, gameSeries, releaseYear]`, generated from the
+community [AmiiboAPI] database. Edit it, then run:
+
+```sh
+python tools/gen_amiibo_db.py   # -> web-sync/amiibo-db.js + android assets
+```
+
+[AmiiboAPI]: https://github.com/N3evin/AmiiboAPI
 
 ## Writing an amiibo to a physical tag
 
@@ -128,7 +183,9 @@ library entry.
 `Write NDEF note` → `Emulate NDEF note` → `Amiibo library` → `BLE sync` →
 `Clear note`, driven by UP/DOWN/OK. Emulation runs on the PN532Killer's slot
 0 and stops on any button press or a BLE `STOP`. In the library, short OK
-emulates; long OK (1 s) arms a write to a physical tag.
+emulates; long OK (1 s) is the advanced path that arms a write to a physical
+tag. Preview the whole interface (buttons, long-press, every screen) in your
+browser with [`device/web-preview/index.html`](device/web-preview/index.html).
 
 ## Scope notes
 

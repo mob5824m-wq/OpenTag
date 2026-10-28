@@ -28,7 +28,7 @@
 | 17 | Hook-up wire 22–24 AWG | ~8 | TP4056/MT3608 to their headers |
 | 18 | Double-sided foam tape / zip ties | — | Securing modules in the shell tray |
 
-## Printed parts (`hardware/cad/opentag_shell.scad`)
+## Printed parts (`hardware/cad/opentag_shell.cad`)
 
 | # | Part | Qty | Material |
 |---|------|----|----------|

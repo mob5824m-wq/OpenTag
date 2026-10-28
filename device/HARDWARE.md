@@ -14,7 +14,7 @@ Fabrication assets:
 - `hardware/pcb/opentag-carrier.kicad_pcb` — 90 × 60 mm 2-layer carrier
   (regenerate/verify with `python3 hardware/pcb/generate_carrier_pcb.py`)
 - `hardware/pcb/WIRING.md` — assembly, power chain, signal map, bring-up
-- `hardware/cad/opentag_shell.scad` — parametric 2-part handheld shell
+- `hardware/cad/opentag_shell.cad` — parametric 2-part handheld shell
 - `hardware/BOM.md` — parts list and budget
 
 ## Why the PN532Killer (and not the PN532)
