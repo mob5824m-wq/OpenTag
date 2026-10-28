@@ -65,10 +65,12 @@ Open `device/web-sync/index.html` from a secure origin (HTTPS or localhost)
 in Chrome/Edge, connect over BLE, then:
 
 - queue a text/URL note and send it;
-- choose a `.zip` (or loose `.bin` files) of your NTAG215 dumps — the page
-  unzips locally with the browser's native `DecompressionStream`, validates
-  each dump (size 532–572 B, UID BCC, NTAG215 capability container), and
-  copies them to the device in 240-byte BLE chunks;
+- choose a `.zip`, loose `.bin` dumps, or Flipper Zero `.nfc` files of your
+  NTAG215 backups — the page unzips locally with the browser's native
+  `DecompressionStream`, accepts any container layout (532/540/572 B,
+  zero/newline-padded, N2 Elite 32-byte header, Flipper page lists), validates
+  each dump (UID BCC, NTAG215 capability container), and copies the normalized
+  540-byte image to the device in BLE chunks;
 - list, emulate, or delete library entries on the device.
 
 Nothing is uploaded to any server; all processing happens in your browser.

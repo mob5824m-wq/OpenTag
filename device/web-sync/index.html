@@ -35,8 +35,8 @@
 
   <section class="card">
     <strong>Amiibo library</strong>
-    <p class="sub">Upload a <b>.zip</b> (or loose <b>.bin</b> files) of NTAG215 dumps from your own collection. Dumps are unzipped in your browser, validated, then copied to the device over BLE. Nothing is uploaded to any server.</p>
-    <div class="row"><label class="filebtn" for="zipFile">Choose .zip / .bin files</label><input id="zipFile" class="hidden" type="file" accept=".zip,.bin,application/zip" multiple><button id="syncZip" disabled>Sync to device</button><button id="refresh" class="secondary" disabled>Refresh list</button><button id="stopEmu" class="secondary" disabled>Stop emulation</button></div>
+    <p class="sub">Upload a <b>.zip</b>, loose <b>.bin</b> dumps, or Flipper Zero <b>.nfc</b> files from your own collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized in your browser, validated, then copied to the device over BLE. Nothing is uploaded to any server.</p>
+    <div class="row"><label class="filebtn" for="zipFile">Choose .zip / .bin / .nfc</label><input id="zipFile" class="hidden" type="file" accept=".zip,.bin,.nfc,.tag,.dump,application/zip,text/plain" multiple><button id="syncZip" disabled>Sync to device</button><button id="refresh" class="secondary" disabled>Refresh list</button><button id="stopEmu" class="secondary" disabled>Stop emulation</button></div>
     <div id="parsed" class="library"></div>
     <div class="rule"></div>
     <strong style="font-size:13px">On device</strong>
@@ -70,20 +70,62 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // ---------- dump validation (mirror of device ntag215::validateDump) ----------
-  function validateDump(buf) {
-    if (buf.length < 532) return 'too short';
-    if (buf.length > 572) return 'too long';
-    if (((0x88 ^ buf[0] ^ buf[1] ^ buf[2]) & 0xFF) !== buf[3]) return 'bad UID BCC0';
-    if (buf[12] !== 0xE1 || buf[13] !== 0x10 || buf[14] !== 0x3E) return 'not an NTAG215 CC';
-    if (buf[0] !== 0x04) return 'not an NXP UID';
+  // ---------- dump validation & normalization ----------
+  // Accepts any container a legal rip produces: exact 532/540/572-byte .bin,
+  // zero- or newline-padded exports, N2 Elite 572-byte files with a 32-byte
+  // header, and Flipper Zero .nfc text (parsed separately). Everything is
+  // normalized to the full 540-byte NTAG215 page image before upload.
+  function structuralCheck(view) {
+    // view: Uint8Array of at least 16 bytes at the candidate offset
+    if (view.length < 532) return 'too short';
+    const blankUid = view.slice(0, 8).every(b => b === 0);
+    if (blankUid) return 'blank UID (data-only export — emulation needs the tag\'s original UID)';
+    if (((0x88 ^ view[0] ^ view[1] ^ view[2]) & 0xFF) !== view[3]) return 'UID checksum mismatch';
+    if (view[0] !== 0x04) return 'not an NXP tag UID';
+    if (view[12] !== 0xE1 || view[13] !== 0x10 || view[14] !== 0x3E) return 'not an NTAG215 tag';
     return null;
+  }
+  function normalizeDump(bytes) {
+    // Candidate start offsets: 0 (plain dump, or trailing junk after 540
+    // bytes) and 32 (N2 Elite style header in front of the tag data).
+    const total = bytes.length;
+    if (total < 532) return { image: null, reason: 'too short' };
+    const candidates = total >= 564 ? [0, 32] : [0];
+    for (const off of candidates) {
+      // Clamp to one page image; trailing padding/newlines/junk beyond it and
+      // missing PWD/PACK pages (532-byte exports) are handled by the padding.
+      const slice = bytes.subarray(off, Math.min(total, off + 540));
+      if (slice.length < 532) continue;
+      if (structuralCheck(slice)) continue;
+      const image = new Uint8Array(540);
+      image.set(slice.subarray(0, Math.min(slice.length, 540)));
+      return { image, reason: null };
+    }
+    return { image: null, reason: structuralCheck(bytes.subarray(0, Math.min(total, 540))) || 'unrecognized layout' };
+  }
+  // Flipper Zero NFC text format: "Page N: aa bb cc dd" lines.
+  function parseFlipperNfc(text) {
+    if (!/Page\s+\d+\s*:/i.test(text)) return null;
+    const pages = [];
+    for (const m of text.matchAll(/^Page\s+(\d+)\s*:\s*([0-9a-fA-F ]+)$/gm)) {
+      const n = parseInt(m[1], 10);
+      const bytes = m[2].trim().split(/\s+/).map(h => parseInt(h, 16));
+      if (n > 134 || bytes.some(b => isNaN(b)) || (bytes.length !== 4 && bytes.length !== 0)) return null;
+      if (bytes.length === 4) pages[n] = bytes;
+    }
+    if (!pages[0]) return null;
+    const image = new Uint8Array(540);
+    for (let n = 0; n <= 134; n++) if (pages[n]) image.set(pages[n], n * 4);
+    return image;
+  }
+  function validateDump(buf) {  // used for display of already-normalized images
+    return structuralCheck(buf);
   }
   function uidHex(buf) {
     return [...buf.slice(0, 3), ...buf.slice(4, 8)].map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
   }
   function cleanName(raw) {
-    const base = raw.split(/[\\/]/).pop().replace(/\.bin$/i, '').trim();
+    const base = raw.split(/[\\/]/).pop().replace(/\.(bin|nfc|tag|dump)$/i, '').trim();
     return base.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 40);
   }
 
@@ -131,34 +173,64 @@
   $('zipFile').onchange = async e => {
     const files = [...e.target.files];
     e.target.value = '';
-    const found = [];
+    const found = [];   // {name, bytes|null, text|null, explicit}
     for (const f of files) {
       try {
-        if (f.name.toLowerCase().endsWith('.zip')) {
+        const lower = f.name.toLowerCase();
+        if (lower.endsWith('.zip')) {
           const entries = await readZip(f);
           for (const en of entries) {
-            if (!en.name.toLowerCase().endsWith('.bin') || !en.data) continue;
-            found.push({ name: cleanName(en.name), data: en.data });
+            if (!en.data) continue;
+            const ename = en.name.toLowerCase();
+            if (ename.endsWith('.bin') || ename.endsWith('.tag') || ename.endsWith('.dump')) {
+              found.push({ name: cleanName(en.name), bytes: en.data, text: null, explicit: true });
+            } else if (ename.endsWith('.nfc') || ename.endsWith('.txt')) {
+              found.push({ name: cleanName(en.name), bytes: null, text: new TextDecoder().decode(en.data), explicit: ename.endsWith('.nfc') });
+            } else if (en.data.length <= 65536) {
+              // No telling extension: sniff it (binary dump or Flipper text).
+              found.push({ name: cleanName(en.name), bytes: en.data, text: null, explicit: false });
+            }
           }
           log(`${f.name}: ${entries.length} zip entr${entries.length === 1 ? 'y' : 'ies'} scanned`);
-        } else if (f.name.toLowerCase().endsWith('.bin')) {
-          found.push({ name: cleanName(f.name), data: new Uint8Array(await f.arrayBuffer()) });
+        } else if (lower.endsWith('.nfc')) {
+          found.push({ name: cleanName(f.name), bytes: null, text: await f.text(), explicit: true });
+        } else if (lower.endsWith('.bin') || lower.endsWith('.tag') || lower.endsWith('.dump') || lower.endsWith('.dat')) {
+          found.push({ name: cleanName(f.name), bytes: new Uint8Array(await f.arrayBuffer()), text: null, explicit: true });
         } else {
-          log(`Skipped ${f.name} (not .zip/.bin)`, 'err');
+          // Unknown extension: sniff anyway — the strict structural checks
+          // make false positives effectively impossible.
+          found.push({ name: cleanName(f.name), bytes: new Uint8Array(await f.arrayBuffer()), text: null, explicit: false });
         }
       } catch (err) { log(`${f.name}: ${err.message}`, 'err'); }
     }
     const seen = new Set(parsed.map(x => x.name));
-    let ok = 0;
+    let ok = 0, shown = 0;
     for (const f of found) {
-      const reason = validateDump(f.data);
-      const item = { ...f, uidHex: uidHex(f.data), valid: !reason, reason };
-      if (!f.name || seen.has(f.name)) item.name = (f.name || 'tag') + '_' + Math.random().toString(36).slice(2, 6);
+      let image = null, reason = null;
+      if (f.text != null) {
+        image = parseFlipperNfc(f.text);
+        if (image) { const r = structuralCheck(image); if (r) { reason = r; image = null; } }
+        else if (f.explicit) reason = 'no NTAG215 pages found';
+      }
+      if (!image && f.bytes) {
+        const n = normalizeDump(f.bytes);
+        image = n.image; reason = n.reason;
+      }
+      if (!image) {
+        if (!f.explicit) continue;  // silently skip sniffed non-dumps
+        const item = { name: f.name, data: new Uint8Array(0), uidHex: '', valid: false, reason };
+        if (seen.has(item.name)) item.name += '_' + Math.random().toString(36).slice(2, 6);
+        seen.add(item.name);
+        parsed.push(item);
+        continue;
+      }
+      const item = { name: f.name, data: image, uidHex: uidHex(image), valid: true, reason: null };
+      if (!item.name || seen.has(item.name)) item.name = (item.name || 'tag') + '_' + Math.random().toString(36).slice(2, 6);
       seen.add(item.name);
       parsed.push(item);
-      if (item.valid) ok++;
+      ok++; shown++;
     }
-    log(`Parsed ${found.length} dump(s): ${ok} valid NTAG215 image(s)`);
+    log(`Parsed ${found.length} file(s): ${ok} valid NTAG215 dump(s)`);
     renderParsed();
   };
 
@@ -166,7 +238,7 @@
     const root = $('parsed'); root.replaceChildren();
     if (!parsed.length) {
       const p = document.createElement('p'); p.className = 'sub';
-      p.textContent = 'No files parsed yet. Dumps must be 532–572 byte NTAG215 .bin images.';
+      p.textContent = 'No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, zero/newline-padded OK), Flipper Zero .nfc, or a .zip containing either.';
       root.append(p); return;
     }
     parsed.forEach((item, i) => {
