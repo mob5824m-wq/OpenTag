@@ -13,7 +13,7 @@
   .stage { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
   .oled-case { background:#1b1410; border:1px solid #33241a; border-radius:26px; padding:26px 24px 22px; box-shadow:0 18px 50px #000a inset, 0 8px 30px #0009; }
   .bezel { background:#000; border-radius:14px; padding:14px; border:2px solid #0a0a0a; }
-  canvas { display:block; width:384px; height:384px; image-rendering:pixelated; border-radius:6px; background:#101010; }
+  canvas { display:block; width:512px; height:512px; image-rendering:pixelated; border-radius:6px; background:#101010; }
   .btnrow { display:flex; gap:14px; justify-content:center; margin-top:20px; }
   .hwbtn { width:74px; height:74px; border-radius:50%; border:2px solid #3a3327; background:linear-gradient(#2b2620,#191512); color:#cfe3d0; font:700 12px ui-monospace,monospace; cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:none; box-shadow:0 5px 0 #0a0806; }
   .hwbtn:active, .hwbtn.down { transform:translateY(3px); box-shadow:0 2px 0 #0a0806; }
@@ -75,22 +75,61 @@
   }
   const BG = 0x1082, MINT = 0xB7EF, LAVENDER = 0xC5DF, WHITE = 0xFFFF, MUTED = 0x9CF3, RED = 0xF986;
   const C = { BG: rgb565(BG), MINT: rgb565(MINT), LAVENDER: rgb565(LAVENDER), WHITE: rgb565(WHITE), MUTED: rgb565(MUTED), RED: rgb565(RED) };
-  let curX = 0, curY = 0, curColor = C.WHITE, wrap = false;
+  let curX = 0, curY = 0, curColor = C.WHITE, curSize = 1, wrap = false;
   ctx.fillStyle = C.BG; ctx.fillRect(0, 0, 128, 128);
-  ctx.font = '5px monospace'; // will be replaced per text size
 
+  // --- device font ---------------------------------------------------------
+  // The exact classic 5x7 ASCII font (printable 0x20..0x7E, 5 column bytes per
+  // glyph, bit 0 = top row) that Adafruit GFX renders on the device's SSD1351
+  // (source: Adafruit-GFX-Library glcdfont.c, BSD). Drawing it pixel by pixel
+  // instead of using a scaled browser font is what makes this preview crisp
+  // AND pixel-faithful: no anti-aliasing, exactly like the real OLED.
+  // Classic 5x7 ASCII font (printable 0x20..0x7E), 5 column bytes per
+  // glyph, bit 0 = top row - the exact font Adafruit GFX renders on the
+  // device's SSD1351. Source: Adafruit-GFX-Library glcdfont.c (BSD).
+  const GLYPHS = [
+    0,0,0,0,0,0,0,95,0,0,0,7,0,7,0,20,127,20,127,20,36,42,127,42,18,
+    35,19,8,100,98,54,73,86,32,80,0,8,7,3,0,0,28,34,65,0,0,65,34,28,0,
+    42,28,127,28,42,8,8,62,8,8,0,128,112,48,0,8,8,8,8,8,0,0,96,96,0,
+    32,16,8,4,2,62,81,73,69,62,0,66,127,64,0,114,73,73,73,70,33,65,73,77,51,
+    24,20,18,127,16,39,69,69,69,57,60,74,73,73,49,65,33,17,9,7,54,73,73,73,54,
+    70,73,73,41,30,0,0,20,0,0,0,64,52,0,0,0,8,20,34,65,20,20,20,20,20,
+    0,65,34,20,8,2,1,89,9,6,62,65,93,89,78,124,18,17,18,124,127,73,73,73,54,
+    62,65,65,65,34,127,65,65,65,62,127,73,73,73,65,127,9,9,9,1,62,65,65,81,115,
+    127,8,8,8,127,0,65,127,65,0,32,64,65,63,1,127,8,20,34,65,127,64,64,64,64,
+    127,2,28,2,127,127,4,8,16,127,62,65,65,65,62,127,9,9,9,6,62,65,81,33,94,
+    127,9,25,41,70,38,73,73,73,50,3,1,127,1,3,63,64,64,64,63,31,32,64,32,31,
+    63,64,56,64,63,99,20,8,20,99,3,4,120,4,3,97,89,73,77,67,0,127,65,65,65,
+    2,4,8,16,32,0,65,65,65,127,4,2,1,2,4,64,64,64,64,64,0,3,7,8,0,
+    32,84,84,120,64,127,40,68,68,56,56,68,68,68,40,56,68,68,40,127,56,84,84,84,24,
+    0,8,126,9,2,24,164,164,156,120,127,8,4,4,120,0,68,125,64,0,32,64,64,61,0,
+    127,16,40,68,0,0,65,127,64,0,124,4,120,4,120,124,8,4,4,120,56,68,68,68,56,
+    252,24,36,36,24,24,36,36,24,252,124,8,4,4,8,72,84,84,84,36,4,4,63,68,36,
+    60,64,64,32,124,28,32,64,32,28,60,64,48,64,60,68,40,16,40,68,76,144,144,144,124,
+    68,100,84,76,68,0,8,54,65,0,0,0,119,0,0,0,65,54,8,0,2,1,2,4,2,
+  ];
   function setTextColor(c) { curColor = c; }
-  function setTextSize(s) { ctx.font = (s * 6 - 1) + 'px ui-monospace,Menlo,monospace'; }
+  function setTextSize(s) { curSize = s; }
   function setCursor(x, y) { curX = x; curY = y; }
   function setTextWrap(w) { wrap = w; }
+  function drawChar(ch, x, y) {
+    const code = ch.charCodeAt(0) - 0x20;
+    if (code < 0 || code >= 95) return;  // unsupported glyph -> blank (device shows nothing for >0x7E)
+    ctx.fillStyle = curColor;
+    for (let col = 0; col < 5; col++) {
+      const bits = GLYPHS[code * 5 + col];
+      for (let row = 0; row < 8; row++) {
+        if ((bits >> row) & 1) ctx.fillRect(x + col * curSize, y + row * curSize, curSize, curSize);
+      }
+    }
+  }
   function print(s, hex) {
     if (hex !== undefined) s = s.toString(16).toUpperCase();
-    ctx.fillStyle = curColor;
     let x = curX;
     for (const ch of String(s)) {
-      if (wrap && x + 6 > 128) { x = 0; curY += 12; }
-      ctx.fillText(ch, x, curY + 5); // baseline tweak: emulate top-left cursor
-      x += 6;
+      if (wrap && x + 6 * curSize > 128) { x = 0; curY += 8 * curSize; }
+      drawChar(ch, x, curY);
+      x += 6 * curSize;
     }
     curX = x;
   }
