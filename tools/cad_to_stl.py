@@ -68,17 +68,28 @@ def frustum(d1, d2, h, seg=SEG):
 
 def rbox(w, l, h, r, cseg=CORNER_SEG):
     """Rounded box, centred x/y, base z=0 — the .cad's hull-of-cylinders."""
-    r = min(r, w / 2, l / 2)
-    pts = []
-    for cx, cy, a0 in ((w / 2 - r, -l / 2 + r, -90.0),
-                       (w / 2 - r,  l / 2 - r,   0.0),
-                       (-w / 2 + r, l / 2 - r,  90.0),
-                       (-w / 2 + r, -l / 2 + r, 180.0)):
-        for k in range(cseg):
-            a = math.radians(a0 + 90.0 * k / cseg)
-            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-    n = len(pts)
-    vs = [[x, y, 0.0] for x, y in pts] + [[x, y, h] for x, y in pts]
+    return _rbox_ring(w, l, r, h, w, l, r, cseg)
+
+
+def _rbox_ring(w0, l0, r0, h, w1, l1, r1, cseg=CORNER_SEG):
+    """Rounded 'prism' whose footprint grows from (w0,l0,r0) at z=0 to
+    (w1,l1,r1) at z=h — the .cad's hull() of two rboxes (equal chamfer on
+    all sides keeps the corner centres coincident, so sides are planar and
+    corners conical)."""
+    def ring(w, l, r):
+        r = min(r, w / 2, l / 2)
+        pts = []
+        for cx, cy, a0 in ((w / 2 - r, -l / 2 + r, -90.0),
+                           (w / 2 - r,  l / 2 - r,   0.0),
+                           (-w / 2 + r, l / 2 - r,  90.0),
+                           (-w / 2 + r, -l / 2 + r, 180.0)):
+            for k in range(cseg):
+                a = math.radians(a0 + 90.0 * k / cseg)
+                pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        return pts
+    p0, p1 = ring(w0, l0, r0), ring(w1, l1, r1)
+    n = len(p0)
+    vs = [[x, y, 0.0] for x, y in p0] + [[x, y, h] for x, y in p1]
     faces = []
     for i in range(1, n - 1):
         faces.append([0, i + 1, i])
@@ -88,6 +99,10 @@ def rbox(w, l, h, r, cseg=CORNER_SEG):
         faces.append([i, j, n + j])
         faces.append([i, n + j, n + i])
     return trimesh.Trimesh(vertices=vs, faces=faces, process=True)
+
+
+def rrect_frustum(w0, l0, r0, w1, l1, r1, h):
+    return _rbox_ring(w0, l0, r0, h, w1, l1, r1)
 
 def union(meshes):
     return trimesh.boolean.union(list(meshes), engine="manifold")
@@ -131,9 +146,14 @@ def front_shell(p):
     # here every cut either stops flush on the far face or overshoots
     # outside the part entirely (where it is clipped away cleanly).
     ceiling = p["inner_d"] + 0.01          # cavity cut top plane
-    # OLED window, chamfered outward (starts flush at the ceiling)
-    oled = T(frustum(p["oled_win"], p["oled_win"] + 2 * 1.2, p["wall"] + 0.02),
-             [p["oled_cx"], p["oled_cy"], ceiling])
+    # Rectangular OLED window, chamfered outward (starts flush at the
+    # ceiling, overshoots 0.02 above the outer face — clean in manifold3d).
+    oled = T(rrect_frustum(p["oled_win_w"], p["oled_win_l"], p["oled_win_r"],
+                           p["oled_win_w"] + 2 * p["oled_bezel"],
+                           p["oled_win_l"] + 2 * p["oled_bezel"],
+                           p["oled_win_r"] + p["oled_bezel"],
+                           p["wall"] + 0.03),
+             [p["oled_cx"], p["oled_cy"], ceiling - 0.01])
     btns = [T(cyl(p["btn_hole"], p["wall"] + 0.02),
               [x, p["btn_dy"], ceiling])
             for x in (-1.5 * p["btn_dx"], -0.5 * p["btn_dx"],
@@ -166,7 +186,7 @@ def front_shell(p):
     for x in (-1, 1):
         for y in (-1, 1):
             at = [x * p["screw_dx"], y * p["screw_dy"], 0]
-            bosses.append(difference([T(cyl(8, 10), at), T(cyl(2.8, 10), at)]))
+            bosses.append(difference([T(cyl(7, 10), at), T(cyl(2.8, 10), at)]))
     return union([shell] + rails + bosses)
 
 def back_plate(p):
@@ -188,6 +208,9 @@ def back_plate(p):
             standoffs.append(difference(
                 [T(cyl(7.5, p["standoff_h"]), at),
                  T(cyl(2.8, 5.5), [at[0], at[1], p["standoff_h"] - 5.5])]))
+    # button-load posts: carry button-press load straight into the plate
+    btn_posts = [T(cube(8, 4, p["standoff_h"]), [px - 4, p["btn_dy"] - 2, 0])
+                 for px in (-14, 14)]
     # PN532Killer snap bay posts
     kil_posts = []
     for qx in (-1, 1):
@@ -200,6 +223,15 @@ def back_plate(p):
                                     p["kil_post_h"]),
                                [px - p["kil_post"] / 2 - ex,
                                 py - p["kil_post"] / 2 - ey, 0]))
+    # anti-slide nubs at the Killer board's edge midpoints
+    kn, knh = p["kil_nub"], p["kil_nub_h"]
+    nubs = [T(cube(kn, kn, knh),
+              [p["kil_cx"] + nx * (p["kil_l"] / 2 + 0.8) - kn / 2,
+               p["kil_cy"] - kn / 2, 0]) for nx in (-1, 1)]
+    nubs += [T(cube(kn, kn, knh),
+               [p["kil_cx"] - kn / 2,
+                p["kil_cy"] + ny * (p["kil_w"] / 2 + 0.8) - kn / 2, 0])
+             for ny in (-1, 1)]
     # battery retainers: two side lips + toe + heel
     bat_sides = [T(cube(3, p["bat_l"], 7),
                    [p["bat_cx"] + sx * p["bat_w"] / 2 - (3 if sx < 0 else 0),
@@ -217,14 +249,24 @@ def back_plate(p):
              for my in (0, 1)]
     tray += [T(cube(p["tray_w"] - 14, 2.6, 2.02), [tx + 7, ty + yy, -0.01])
              for yy in (3.5, p["tray_d"] - 6)]
-    body = union([plate] + lips + standoffs + kil_posts + bat_sides +
-                 [toe, heel] + tray)
-    # NFC tap window: pocket thinning the floor from the inside (flush top)
-    tap = T(cube(p["tap_win"], p["tap_win"], p["floor_t"] - p["tap_t"]),
-            [p["kil_cx"] - p["tap_win"] / 2, p["kil_cy"] - p["tap_win"] / 2,
-             p["tap_t"] - p["floor_t"]])
-    # M3 screw holes, countersunk from the outside (through-hole flush on top)
-    cuts = [tap]
+    body = union([plate] + lips + standoffs + btn_posts + kil_posts + nubs +
+                 bat_sides + [toe, heel] + tray)
+    cuts = []
+    # NFC tap window: fully OPEN over the antenna — best read range.
+    # Through-cut from below, overshooting past the outer face.
+    cuts.append(T(cyl(p["tap_win"], p["floor_t"] + 0.02),
+                  [p["kil_cx"], p["kil_cy"], -p["floor_t"] - 0.01]))
+    # controller cradle: shallow outside recess centred on the window
+    # (outer-face pocket terminating mid-material — countersink pattern).
+    cuts.append(T(cyl(p["cradle_d"], p["cradle_t"] + 0.01),
+                  [p["kil_cx"], p["kil_cy"], -p["floor_t"] - 0.01]))
+    # service window over the DevKitC (BOOT/RST access + lighter plate)
+    cuts.append(T(rbox(p["svc_w"], p["svc_l"], p["floor_t"] + 0.02, p["svc_r"]),
+                  [0, p["svc_cy"], -p["floor_t"] - 0.01]))
+    # charger/boost vent through the plate, between the tray's tie-down bars
+    cuts.append(T(cube(p["vent_l"], p["vent_w"], p["floor_t"] + 0.02),
+                  [p["tray_cx"] - p["vent_l"] / 2,
+                   p["tray_cy"] - p["vent_w"] / 2, -p["floor_t"] - 0.01]))
     for x in (-1, 1):
         for y in (-1, 1):
             at = [x * p["screw_dx"], y * p["screw_dy"]]
@@ -234,9 +276,16 @@ def back_plate(p):
     return difference([body] + cuts)
 
 def button_cap(p):
-    return union([cyl(p["cap_d"], p["cap_h"]),
-                  T(cyl(p["btn_hole"] - 0.6, p["cap_collar"]),
-                    [0, 0, -p["cap_collar"]])])
+    head = cyl(p["cap_d"], p["cap_h"])
+    skirt = T(cyl(p["cap_skirt_o"], p["cap_skirt"]), [0, 0, -p["cap_skirt"]])
+    fz = -(p["cap_skirt"] + p["cap_flange_t"])
+    flange = T(cyl(p["cap_flange_d"], p["cap_flange_t"]), [0, 0, fz])
+    # pusher rod reaches 0.4 mm past the flange into the skirt so it fuses
+    # volumetrically with both (a flush end would only face-touch)
+    pusher = T(cyl(p["cap_push_d"],
+                   p["cap_push"] + p["cap_flange_t"] + 0.4),
+               [0, 0, fz - p["cap_push"]])
+    return union([head, skirt, flange, pusher])
 
 # ---------------------------------------------------------------------------
 # Verification
@@ -304,15 +353,23 @@ def verify(p, front, back, cap):
     ok = True
     print("geometry checks:")
     ok &= check(front, "front shell",
-                [p["outer_w"], p["outer_l"], p["outer_d"]], 63800, 0.06)
+                [p["outer_w"], p["outer_l"], p["outer_d"]], 44618, 0.02)
     ok &= check(back, "back plate",
                 [p["outer_w"], p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                34700, 0.06)
+                27458, 0.02)
+    # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
+    # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
+    cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
+               + math.pi * (p["cap_skirt_o"] / 2) ** 2 * p["cap_skirt"]
+               + math.pi * (p["cap_flange_d"] / 2) ** 2 * p["cap_flange_t"]
+               + math.pi * (p["cap_push_d"] / 2) ** 2
+               * (p["cap_push"] + p["cap_flange_t"] + 0.4)
+               - math.pi * (p["cap_push_d"] / 2) ** 2
+               * (p["cap_flange_t"] + 0.4))
     ok &= check(cap, "button cap",
-                [p["cap_d"], p["cap_d"], p["cap_h"] + p["cap_collar"]],
-                math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"] +
-                math.pi * ((p["btn_hole"] - 0.6) / 2) ** 2 * p["cap_collar"],
-                0.03)
+                [p["cap_d"], p["cap_d"],
+                 p["cap_h"] + p["cap_skirt"] + p["cap_flange_t"] + p["cap_push"]],
+                cap_vol, 0.03)
 
     print("openness checks (perturbed rays — 0 hits means open):")
     fails = []
@@ -320,6 +377,10 @@ def verify(p, front, back, cap):
         if not cond:
             fails.append(msg)
             print(f"  FAIL {msg}")
+    def expect_ray(actual, exp, msg):
+        if actual != exp:
+            fails.append(msg)
+            print(f"  FAIL {msg}: actual {actual} != {exp}")
 
     for x in (-1.5 * p["btn_dx"], -0.5 * p["btn_dx"],
               0.5 * p["btn_dx"], 1.5 * p["btn_dx"]):
@@ -346,14 +407,29 @@ def verify(p, front, back, cap):
             expect(ray_hits(back, [x * p["screw_dx"], y * p["screw_dy"], 10],
                             [0, 0, -1]) == [],
                    f"back screw hole at ({x},{y}) not open")
-    expect(ray_hits(back, [p["kil_cx"], p["kil_cy"], 5], [0, 0, -1]) ==
-           [6.0, 7.0],   # distances from z=5: pocket floor (-1), plate bottom (-2)
-           "tap window pocket profile wrong")
-    expect(ray_hits(back, [p["pcb_hole_dx"], p["pcb_y"] - p["pcb_hole_dy"], 20],
-                    [0, 0, -1]) == [10.5, 22.0],
-           "standoff pocket depth wrong")   # 20-9.5, 20-(-2)
-    expect(ray_hits(cap, [0, 0, -10], [0, 0, 1]) == [2.5, 12.2],
-           "cap profile wrong")             # -10->-7.5, -10->2.2
+    # NFC tap window must be fully OPEN (zero plastic over the antenna)
+    expect(ray_hits(back, [p["kil_cx"], p["kil_cy"], 5], [0, 0, -1]) == [],
+           "NFC tap window not fully open")
+    # cradle annulus from below at 45 deg (r17.5, clear of the edge nubs):
+    # enters the annulus floor at z=-0.6, exits the plate top at z=0
+    r = 17.5 / math.sqrt(2)
+    expect_ray(ray_hits(back, [p["kil_cx"] + r, p["kil_cy"] + r, -10],
+                         [0, 0, 1]), [9.4, 10.0],
+               "tap cradle annulus profile wrong")
+    # service window over the DevKitC must be open through the plate
+    expect(ray_hits(back, [0, p["svc_cy"], 5], [0, 0, -1]) == [],
+           "service window not open")
+    # power-tray vent, from below through the vent between the tie bars
+    expect(ray_hits(back, [p["tray_cx"], p["tray_cy"], -10], [0, 0, 1]) == [],
+           "tray vent not open")
+    # standoff pocket: the ray runs down the pocket axis, so it enters at
+    # the pocket bottom (z=8.5) and exits the plate underside (z=-1.8)
+    expect_ray(ray_hits(back, [p["pcb_hole_dx"], p["pcb_y"] - p["pcb_hole_dy"],
+                         20], [0, 0, -1]), [11.5, 21.8],
+               "standoff pocket depth wrong")
+    # cap on axis (solid skirt): pusher bottom (-5.8) .. head top (2.2)
+    expect_ray(ray_hits(cap, [0, 0, -10], [0, 0, 1]),
+               [4.2, 12.2], "cap profile wrong")
 
     print("solid/void checks (signed distance, one batch per part):")
     def probe(mesh, spec):
@@ -368,15 +444,28 @@ def verify(p, front, back, cap):
         ([-48, -10, 3], "solid"),                     # west wall
         ([48, p["sw_slot_y"], 20], "void"),           # switch slot channel
         ([48, 0, 20], "solid"),                       # east wall
-        ([p["oled_cx"] + 19.5, p["oled_cy"], 28.5], "solid"),  # OLED rail
-        ([p["oled_cx"] + 15, p["oled_cy"], 28.5], "void"),    # beside rail
+        ([p["oled_cx"] + 19.5, p["oled_cy"], 28.5], "solid"),  # face beside window
+        ([p["oled_cx"] + 13, p["oled_cy"], 28.5], "void"),    # window chamfer
+        ([p["oled_cx"] + 15, p["oled_cy"] + 15, 28.6], "solid"),  # window corner
+        ([p["oled_cx"] + 19.5, p["oled_cy"], 26.8], "solid"),  # OLED rail
+        ([p["oled_cx"] + 15, p["oled_cy"], 26.8], "void"),    # beside rail
         ([p["screw_dx"] + 2, p["screw_dy"], 5], "solid"),     # boss
         ([p["screw_dx"], p["screw_dy"], 5], "void"),          # boss hole
     ])
     probe(back, [
-        ([p["kil_cx"], p["kil_cy"], -0.5], "void"),   # tap pocket
-        ([p["kil_cx"], p["kil_cy"], -1.5], "solid"),  # 1 mm floor remains
-        ([p["kil_cx"] - 20, p["kil_cy"], -0.5], "solid"),
+        ([p["kil_cx"], p["kil_cy"], -0.5], "void"),   # tap window open
+        ([p["kil_cx"], p["kil_cy"], -1.5], "void"),   # ..through the cradle too
+        ([p["kil_cx"] + 17, p["kil_cy"], -0.3], "solid"),  # cradle annulus floor
+        ([p["kil_cx"] + 17, p["kil_cy"], -1.0], "void"),   # cradle recess
+        ([p["kil_cx"], p["kil_cy"] + 16.8, 1.2], "solid"), # north anti-slide nub
+        ([p["kil_cx"] + 21.8, p["kil_cy"], 1.2], "solid"), # east anti-slide nub
+        ([0, p["svc_cy"], -1], "void"),               # service window open
+        ([0, -48.5, -1], "solid"),                    # plate south of it
+        ([14, p["btn_dy"], 8], "solid"),              # button-load post
+        ([-14, p["btn_dy"], 8], "solid"),             # button-load post
+        ([6, p["btn_dy"], 8], "void"),                # between the posts
+        ([p["tray_cx"], p["tray_cy"], -1], "void"),   # vent through the plate
+        ([p["tray_cx"], 52, -1], "solid"),            # plate beside the vent
         ([p["screw_dx"], p["screw_dy"], 2.5], "void"),   # NE screw shaft clear
         ([p["screw_dx"], p["screw_dy"], -1], "void"),    # in screw hole
         ([p["pcb_hole_dx"], p["pcb_y"] - p["pcb_hole_dy"], 12], "void"),   # standoff pocket
@@ -394,10 +483,13 @@ def verify(p, front, back, cap):
         ([0, 0, -1], "solid"),                             # plate floor
     ])
     probe(cap, [
-        ([0, 0, 1.1], "solid"),
-        ([0, 0, -3], "solid"),
-        ([3.2, 0, -3], "void"),
-        ([4.7, 0, 1.1], "void"),
+        ([0, 0, 1.1], "solid"),      # head
+        ([4.7, 0, 1.1], "void"),     # outside the head
+        ([2.7, 0, -1.5], "solid"),   # solid skirt
+        ([3.2, 0, -1.5], "void"),    # outside the skirt, above the flange
+        ([3.5, 0, -3.4], "solid"),   # capture flange
+        ([3.5, 0, -4.5], "void"),    # below the flange, off the pusher
+        ([0, 0, -4.5], "solid"),     # pusher rod
     ])
     ok &= not fails
     print("  all feature checks passed" if not fails else
@@ -409,15 +501,18 @@ def verify(p, front, back, cap):
 def main():
     p = parse_params(CAD)
     need = ("outer_w", "outer_l", "outer_d", "inner_w", "inner_l", "inner_d",
-            "wall", "floor_t", "corner", "oled_cx", "oled_cy", "oled_win",
-            "oled_top", "btn_dx", "btn_dy", "btn_hole", "usb_slot_y",
-            "usb_slot_l", "usb_slot_z0", "usb_slot_z1", "sw_slot_y",
-            "sw_slot_l", "sw_slot_z0", "sw_slot_z1", "pcb_y", "pcb_hole_dx",
-            "pcb_hole_dy", "standoff_h", "screw_dx", "screw_dy", "kil_cx",
-            "kil_cy", "kil_l", "kil_w", "kil_post", "kil_lip", "kil_post_h",
-            "tap_win", "tap_t", "bat_cx", "bat_cy", "bat_l", "bat_w",
-            "tray_cx", "tray_cy", "tray_w", "tray_d", "cap_d", "cap_h",
-            "cap_collar")
+            "wall", "floor_t", "corner", "oled_cx", "oled_cy", "oled_win_w",
+            "oled_win_l", "oled_win_r", "oled_bezel", "oled_top", "btn_dx",
+            "btn_dy", "btn_hole", "usb_slot_y", "usb_slot_l", "usb_slot_z0",
+            "usb_slot_z1", "sw_slot_y", "sw_slot_l", "sw_slot_z0",
+            "sw_slot_z1", "pcb_y", "pcb_hole_dx", "pcb_hole_dy", "standoff_h",
+            "screw_dx", "screw_dy", "kil_cx", "kil_cy", "kil_l", "kil_w",
+            "kil_post", "kil_lip", "kil_post_h", "kil_nub", "kil_nub_h",
+            "tap_win", "cradle_d", "cradle_t", "bat_cx", "bat_cy", "bat_l",
+            "bat_w", "tray_cx", "tray_cy", "tray_w", "tray_d", "vent_l",
+            "vent_w", "svc_w", "svc_l", "svc_cy", "svc_r", "cap_d", "cap_h",
+            "cap_proud", "cap_skirt_o", "cap_skirt",
+            "cap_flange_d", "cap_flange_t", "cap_push", "cap_push_d")
     missing = [k for k in need if k not in p]
     if missing:
         sys.exit(f"parameters not parsed from {CAD}: {missing}")
@@ -434,9 +529,14 @@ def main():
         sys.exit("verification failed — STL not written")
 
     print("assembly check: front/back closed-position interference")
-    inter = trimesh.boolean.intersection([parts["opentag_front_shell.stl"],
-                                          parts["opentag_back_plate.stl"]],
-                                         engine="manifold")
+    import warnings
+    with warnings.catch_warnings():
+        # an empty/degenerate intersection makes trimesh's center_mass
+        # divide by zero — harmless, but keep the gate output clean
+        warnings.simplefilter("ignore", RuntimeWarning)
+        inter = trimesh.boolean.intersection(
+            [parts["opentag_front_shell.stl"],
+             parts["opentag_back_plate.stl"]], engine="manifold")
     vol = 0.0 if inter.is_empty else inter.volume
     # The halves clamp face-to-face at z=0 (rim, boss bottoms), which the
     # intersection reports as zero-thickness contact patches, and

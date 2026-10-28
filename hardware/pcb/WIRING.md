@@ -2,8 +2,15 @@
 
 `opentag-carrier.kicad_pcb` (regenerate with `python3 generate_carrier_pcb.py`,
 which self-checks connectivity and clearance before writing the file) is a
-90 × 60 mm, 2-layer, all-through-hole board. View/order it in KiCad 6+; press
-**B** to fill the two GND zones before plotting Gerbers.
+90 × 60 mm, 2-layer, all-through-hole board. Two ways to fabricate it:
+
+- **Gerbers (recommended):** send `hardware/pcb/gerbers/opentag-gerbers.zip`
+  to any fab (JLCPCB, PCBWay, …). The generator writes and machine-verifies
+  the set; the GND zones are not needed — power returns use explicit
+  tracks, so the boards work unfilled.
+- **KiCad:** view/order the `.kicad_pcb` in KiCad 6+; press **B** to fill
+  the two GND zones before plotting your own Gerbers if you want the extra
+  copper.
 
 ## What lives on the board
 

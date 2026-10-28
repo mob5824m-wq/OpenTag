@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """OpenTag carrier PCB generator.
 
-Generates hardware/pcb/opentag-carrier.kicad_pcb: a 90 x 60 mm 2-layer
+Generates hardware/pcb/opentag-carrier.kicad_pcb plus a fab-ready Gerber
+set (hardware/pcb/gerbers/, also zipped): a 90 x 60 mm 2-layer
 all-through-hole carrier that hosts
 
   * an ESP32-S3-DevKitC-1 in two 1x22 female headers (exact geometry from
@@ -15,7 +16,9 @@ all-through-hole carrier that hosts
 The script is self-checking: it builds a geometric netlist (pads, tracks,
 vias), verifies with union-find that every net is fully connected and that
 unrelated copper keeps >= MIN_GAP clearance, and only then writes the KiCad
-file. Run:  python3 generate_carrier_pcb.py
+file. It then writes the Gerber/Excellon fab files and re-parses them to
+verify they match the model (flashes, draws, mask openings, outline,
+drills). Run:  python3 generate_carrier_pcb.py
 """
 
 import math
@@ -646,13 +649,517 @@ def main():
     n_pads = len(pads)
     n_seg = len(segs)
     n_via = len(vias)
-    write_kicad(__file__.rsplit("/", 1)[0] + "/opentag-carrier.kicad_pcb")
+    here = __file__.rsplit("/", 1)[0]
+    write_kicad(here + "/opentag-carrier.kicad_pcb")
     print(f"self-check passed: {n_pads} pads, {n_seg} tracks, {n_via} vias, "
           f"{len(NET_NAMES) - 1} nets")
     print("wrote opentag-carrier.kicad_pcb "
           f"({BOARD_W} x {BOARD_H} mm, 2 layers)")
+
+    gdir = here + "/gerbers"
+    written = write_gerbers(gdir)
+    errs = verify_gerbers(gdir)
+    if errs:
+        print("GERBER CHECK FAILED:")
+        for e in errs:
+            print("  -", e)
+        return 1
+    import zipfile
+    with zipfile.ZipFile(os.path.join(gdir, "opentag-gerbers.zip")) as z:
+        total = sum(i.file_size for i in z.infolist())
+    print(f"wrote {len(written)} Gerber/Excellon files + zip to "
+          f"hardware/pcb/gerbers/ ({total/1024:.1f} KiB unzipped) — "
+          f"parsed back and verified against the model")
     return 0
 
+# ---------------------------------------------------------------------------
+# Gerber (RS-274X) + Excellon output
+# ---------------------------------------------------------------------------
+#
+# write_gerbers() emits fab-ready files into hardware/pcb/gerbers/:
+#   opentag-F_Cu.gbr / opentag-B_Cu.gbr      copper: pads + vias flashed on
+#                                             both sides, tracks drawn on
+#                                             their own layer
+#   opentag-F_Mask.gbr / opentag-B_Mask.gbr   solder-mask openings: pads and
+#                                             vias +0.2 mm, NPTH +0.4 mm
+#   opentag-F_SilkS.gbr / opentag-B_SilkS.gbr silkscreen: lines/rects at
+#                                             0.15 mm, labels rendered with
+#                                             the same 5x7 font the device
+#                                             OLED shows (one R flash/pixel)
+#   opentag-Edge_Cuts.gbr                     board outline (0.1 mm trace)
+#   opentag.drl                               Excellon drills (metric,
+#                                             FMAT 2, plated/NPTH attributes)
+#   opentag-gerbers.zip                       all of the above
+#
+# Coordinates are 3.4 mm absolute and identical to the .kicad_pcb values
+# (this generator's model uses +y = south; both artifacts share it). Silk
+# text anchors are the TOP-LEFT of the text box and glyphs run toward +x
+# and +y, matching that model. verify_gerbers() parses the emitted files
+# back and compares them with the model, so the Gerbers are
+# machine-verified, not just written.
 
+import os
+import re
+import zipfile
+
+# Classic 5x7 ASCII font, printable 0x20..0x7E, 5 column bytes per glyph,
+# bit 0 = top row — the same table the device OLED and the web preview
+# render. Source: Adafruit-GFX-Library glcdfont.c (BSD license).
+FONT5X7 = bytes([
+    0, 0, 0, 0, 0, 0, 0, 95, 0, 0, 0, 7, 0, 7, 0,
+    20, 127, 20, 127, 20, 36, 42, 127, 42, 18, 35, 19, 8, 100, 98,
+    54, 73, 86, 32, 80, 0, 8, 7, 3, 0, 0, 28, 34, 65, 0,
+    0, 65, 34, 28, 0, 42, 28, 127, 28, 42, 8, 8, 62, 8, 8,
+    0, 128, 112, 48, 0, 8, 8, 8, 8, 8, 0, 0, 96, 96, 0,
+    32, 16, 8, 4, 2, 62, 81, 73, 69, 62, 0, 66, 127, 64, 0,
+    114, 73, 73, 73, 70, 33, 65, 73, 77, 51, 24, 20, 18, 127, 16,
+    39, 69, 69, 69, 57, 60, 74, 73, 73, 49, 65, 33, 17, 9, 7,
+    54, 73, 73, 73, 54, 70, 73, 73, 41, 30, 0, 0, 20, 0, 0,
+    0, 64, 52, 0, 0, 0, 8, 20, 34, 65, 20, 20, 20, 20, 20,
+    0, 65, 34, 20, 8, 2, 1, 89, 9, 6, 62, 65, 93, 89, 78,
+    124, 18, 17, 18, 124, 127, 73, 73, 73, 54, 62, 65, 65, 65, 34,
+    127, 65, 65, 65, 62, 127, 73, 73, 73, 65, 127, 9, 9, 9, 1,
+    62, 65, 65, 81, 115, 127, 8, 8, 8, 127, 0, 65, 127, 65, 0,
+    32, 64, 65, 63, 1, 127, 8, 20, 34, 65, 127, 64, 64, 64, 64,
+    127, 2, 28, 2, 127, 127, 4, 8, 16, 127, 62, 65, 65, 65, 62,
+    127, 9, 9, 9, 6, 62, 65, 81, 33, 94, 127, 9, 25, 41, 70,
+    38, 73, 73, 73, 50, 3, 1, 127, 1, 3, 63, 64, 64, 64, 63,
+    31, 32, 64, 32, 31, 63, 64, 56, 64, 63, 99, 20, 8, 20, 99,
+    3, 4, 120, 4, 3, 97, 89, 73, 77, 67, 0, 127, 65, 65, 65,
+    2, 4, 8, 16, 32, 0, 65, 65, 65, 127, 4, 2, 1, 2, 4,
+    64, 64, 64, 64, 64, 0, 3, 7, 8, 0, 32, 84, 84, 120, 64,
+    127, 40, 68, 68, 56, 56, 68, 68, 68, 40, 56, 68, 68, 40, 127,
+    56, 84, 84, 84, 24, 0, 8, 126, 9, 2, 24, 164, 164, 156, 120,
+    127, 8, 4, 4, 120, 0, 68, 125, 64, 0, 32, 64, 64, 61, 0,
+    127, 16, 40, 68, 0, 0, 65, 127, 64, 0, 124, 4, 120, 4, 120,
+    124, 8, 4, 4, 120, 56, 68, 68, 68, 56, 252, 24, 36, 36, 24,
+    24, 36, 36, 24, 252, 124, 8, 4, 4, 8, 72, 84, 84, 84, 36,
+    4, 4, 63, 68, 36, 60, 64, 64, 32, 124, 28, 32, 64, 32, 28,
+    60, 64, 48, 64, 60, 68, 40, 16, 40, 68, 76, 144, 144, 144, 124,
+    68, 100, 84, 76, 68, 0, 8, 54, 65, 0, 0, 0, 119, 0, 0,
+    0, 65, 54, 8, 0, 2, 1, 2, 4, 2
+])
+
+SILK_W = 0.15
+EDGE_W = 0.1
+MASK_CLEAR = 0.2        # pad/via mask opening growth per side
+MASK_CLEAR_NPTH = 0.4   # mounting-hole mask opening growth
+
+
+def _gnum(v):
+    """One 3.4-format coordinate: sign + 7 digits (value x 10000)."""
+    i = int(round(v * 10000.0))
+    return ("-" if i < 0 else "") + f"{abs(i):07d}"
+
+
+class Gerber:
+    """Minimal RS-274X writer: aperture selects, flashes (D03), draws (D01)."""
+
+    def __init__(self, comment):
+        self.comment = comment
+        self.apertures = {}      # key -> dnum
+        self.definitions = {}    # dnum -> definition body, e.g. "C,0.80000"
+        self.body = []
+        self.cur_ap = None
+
+    def _aperture(self, key, definition):
+        if key not in self.apertures:
+            dnum = 10 + len(self.apertures)
+            self.apertures[key] = dnum
+            self.definitions[dnum] = definition
+        return self.apertures[key]
+
+    def _select(self, key, definition):
+        dnum = self._aperture(key, definition)
+        if dnum != self.cur_ap:
+            self.body.append(f"D{dnum:02d}*")
+            self.cur_ap = dnum
+
+    def flash(self, x, y, key, definition):
+        self._select(key, definition)
+        self.body.append(f"X{_gnum(x)}Y{_gnum(y)}D03*")
+
+    def draw(self, x1, y1, x2, y2, key, definition):
+        self._select(key, definition)
+        self.body.append(f"X{_gnum(x1)}Y{_gnum(y1)}D02*")
+        self.body.append(f"X{_gnum(x2)}Y{_gnum(y2)}D01*")
+
+    def render(self):
+        out = [f"G04 {self.comment}*",
+               "%FSLAX34Y34*%",
+               "%MOMM*%"]
+        for dnum in sorted(self.definitions):
+            out.append(f"%ADD{dnum:02d}{self.definitions[dnum]}*%")
+        out += self.body
+        out.append("M02*")
+        return "\n".join(out) + "\n"
+
+
+def text_pixels(text, size):
+    """Pixel flashes for one silk label.
+
+    Returns (pixels, px): pixels is a list of (dx, dy) offsets from the
+    anchor, px the pixel pitch (size / 7). The anchor is the top-left of
+    the text box: column c of glyph i lands at dx = (i*6 + c)*px and font
+    row r (bit 0 = top row) at dy = r*px, so text runs toward +x/+y.
+    """
+    px = size / 7.0
+    pixels = []
+    for i, ch in enumerate(text):
+        code = ord(ch) - 0x20
+        if not 0 <= code < 95:
+            continue                      # unsupported glyph -> blank
+        for col in range(5):
+            bits = FONT5X7[code * 5 + col]
+            for row in range(8):
+                if (bits >> row) & 1:
+                    pixels.append(((i * 6 + col) * px, row * px))
+    return pixels, px
+
+
+def _pad_aperture(p, grow):
+    """Aperture key + RS-274X definition for a pad grown by `grow`."""
+    size = round(p["size"] + grow, 4)
+    if p["shape"] == "rect":
+        return ("R", size), f"R,{size:.5f}X{size:.5f}"
+    return ("C", size), f"C,{size:.5f}"
+
+
+def write_gerbers(dirpath):
+    """Emit all Gerber + Excellon files; returns the list of paths written."""
+    os.makedirs(dirpath, exist_ok=True)
+    written = []
+
+    def emit(name, gerber):
+        path = os.path.join(dirpath, name)
+        with open(path, "w") as f:
+            f.write(gerber.render())
+        written.append(path)
+
+    # ---- copper ------------------------------------------------------------
+    for layer, fname in (("F.Cu", "opentag-F_Cu.gbr"),
+                         ("B.Cu", "opentag-B_Cu.gbr")):
+        g = Gerber(f"OpenTag carrier PCB - {layer}")
+        for p in pads:
+            (shape, size), defin = _pad_aperture(p, 0.0)
+            g.flash(p["x"], p["y"], ("pad", shape, size), defin)
+        for v in vias:
+            g.flash(v["x"], v["y"], ("via",), f"C,{VIA_SIZE:.5f}")
+        for s in segs:
+            if s["layer"] == layer:
+                g.draw(s["x1"], s["y1"], s["x2"], s["y2"],
+                       ("track", round(s["w"], 4)), f"C,{s['w']:.5f}")
+        emit(fname, g)
+
+    # ---- solder mask ---------------------------------------------------------
+    for layer, fname in (("F.Mask", "opentag-F_Mask.gbr"),
+                         ("B.Mask", "opentag-B_Mask.gbr")):
+        g = Gerber(f"OpenTag carrier PCB - {layer}")
+        for p in pads:
+            grow = MASK_CLEAR_NPTH if p["npth"] else MASK_CLEAR
+            (shape, size), defin = _pad_aperture(p, grow)
+            g.flash(p["x"], p["y"], ("mask", shape, size), defin)
+        for v in vias:
+            g.flash(v["x"], v["y"], ("maskvia",),
+                    f"C,{VIA_SIZE + MASK_CLEAR:.5f}")
+        emit(fname, g)
+
+    # ---- silkscreen -------------------------------------------------------------
+    for layer, fname in (("F.SilkS", "opentag-F_SilkS.gbr"),
+                         ("B.SilkS", "opentag-B_SilkS.gbr")):
+        g = Gerber(f"OpenTag carrier PCB - {layer}")
+        for s in silks:
+            if s["kind"] == "line" and s["layer"] == layer:
+                g.draw(s["x1"], s["y1"], s["x2"], s["y2"],
+                       ("silk",), f"C,{SILK_W:.5f}")
+        for s in silks:
+            if s["kind"] != "text" or s["layer"] != layer:
+                continue
+            pixels, px = text_pixels(s["text"], s["size"])
+            key = ("text", round(px, 5))
+            for dx, dy in pixels:
+                g.flash(s["x"] + dx, s["y"] + dy, key,
+                        f"R,{px:.5f}X{px:.5f}")
+        emit(fname, g)
+
+    # ---- board outline ---------------------------------------------------------
+    g = Gerber("OpenTag carrier PCB - Edge.Cuts")
+    hw, hh = BOARD_W / 2.0, BOARD_H / 2.0
+    for (x1, y1), (x2, y2) in (((-hw, -hh), (hw, -hh)), ((hw, -hh), (hw, hh)),
+                               ((hw, hh), (-hw, hh)), ((-hw, hh), (-hw, -hh))):
+        g.draw(x1, y1, x2, y2, ("edge",), f"C,{EDGE_W:.5f}")
+    emit("opentag-Edge_Cuts.gbr", g)
+
+    # ---- Excellon drill file ------------------------------------------------
+    holes = []
+    for p in pads:
+        holes.append((round(p["drill"], 3), p["x"], p["y"], p["npth"]))
+    for v in vias:
+        holes.append((round(VIA_DRILL, 3), v["x"], v["y"], False))
+    dias = sorted({h[0] for h in holes})
+    npth_tools = {i + 1 for i, d in enumerate(dias)
+                  if any(h[3] and h[0] == d for h in holes)}
+    lines = ["M48", "METRIC,TZ", "FMAT,2"]
+    for i, d in enumerate(dias):
+        func = "NonPlated,NPTH" if (i + 1) in npth_tools else "Plated,TH"
+        lines.append(f";#@! TA.AperFunction,{func}")
+        lines.append(f"T{i + 1}C{d:.3f}")
+    lines += ["%", "G90", "G05"]
+    for i, d in enumerate(dias):
+        lines.append(f"T{i + 1}")
+        for dia, x, y, _ in holes:
+            if dia == d:
+                lines.append(f"X{x:.3f}Y{y:.3f}")
+    lines.append("M30")
+    path = os.path.join(dirpath, "opentag.drl")
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    written.append(path)
+
+    # ---- zip ---------------------------------------------------------------------
+    zpath = os.path.join(dirpath, "opentag-gerbers.zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in written:
+            z.write(p, os.path.basename(p))
+    written.append(zpath)
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Gerber verification: parse the emitted files back, compare with the model
+# ---------------------------------------------------------------------------
+
+def _norm_draw(w, x1, y1, x2, y2):
+    """Direction-independent key for a drawn segment."""
+    a, b = sorted(((round(x1, 4), round(y1, 4)), (round(x2, 4), round(y2, 4))))
+    return (round(w, 4), a[0], a[1], b[0], b[1])
+
+
+def parse_gerber(path):
+    """Parse an RS-274X file (subset we emit) into geometry sets.
+
+    Returns (flashes, draws): flashes = {(shape, w, h, x, y)} with h None
+    for circles; draws = {(dia, x1, y1, x2, y2)} normalised for direction.
+    """
+    flashes, draws, aps = set(), set(), {}
+    cur_ap = None
+    cur = None
+    scale_ok = False
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("%ADD"):
+                body = line[4:-2]                  # drop %ADD and *%
+                dnum = int(body[:2])
+                shape = body[2]
+                dims = body[3:].lstrip(",").split("X")
+                aps[dnum] = (shape, round(float(dims[0]), 5),
+                             round(float(dims[1]), 5) if len(dims) > 1 else None)
+                continue
+            if line.startswith("%FS"):
+                if "X34Y34" not in line:
+                    raise ValueError(f"{path}: unexpected format spec {line}")
+                scale_ok = True
+                continue
+            if line.startswith("%") or line.startswith("G04") or line == "M02*":
+                continue
+            m = re.fullmatch(r"D(\d+)\*", line)
+            if m:
+                cur_ap = int(m.group(1))
+                continue
+            m = re.fullmatch(r"(?:G01)?X(-?\d+)Y(-?\d+)D0([123])\*", line)
+            if m:
+                x, y, op = (int(m.group(1)) / 10000.0,
+                            int(m.group(2)) / 10000.0, int(m.group(3)))
+                if op == 2:
+                    cur = (x, y)
+                elif op == 3:
+                    if cur_ap is None:
+                        raise ValueError(f"{path}: flash with no aperture")
+                    shape, w, h = aps[cur_ap]
+                    flashes.add((shape, w, h, round(x, 4), round(y, 4)))
+                    cur = (x, y)
+                else:
+                    if cur is None or cur_ap is None:
+                        raise ValueError(f"{path}: draw with no move/aperture")
+                    shape, w, h = aps[cur_ap]
+                    draws.add(_norm_draw(w, cur[0], cur[1], x, y))
+                    cur = (x, y)
+                continue
+            raise ValueError(f"{path}: unparseable line {line!r}")
+    if not scale_ok:
+        raise ValueError(f"{path}: missing %FSLAX34Y34% header")
+    return flashes, draws
+
+
+def parse_drill(path):
+    """Parse the Excellon file into (tools, holes): tools {tnum: dia},
+    holes [(dia, x, y)] in file order."""
+    tools, holes = {}, []
+    cur = None
+    in_header = False
+    with open(path) as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith(";"):
+                continue
+            if s == "M48":
+                in_header = True
+                continue
+            if s == "%":
+                in_header = False
+                continue
+            m = re.fullmatch(r"T(\d+)C([\d.]+)", s)
+            if m and in_header:
+                tools[int(m.group(1))] = round(float(m.group(2)), 3)
+                continue
+            if s in ("G90", "G05", "M30", "FMAT,2") or s.startswith("METRIC"):
+                continue
+            m = re.fullmatch(r"T(\d+)", s)
+            if m:
+                cur = int(m.group(1))
+                continue
+            m = re.fullmatch(r"X(-?[\d.]+)Y(-?[\d.]+)", s)
+            if m:
+                if cur is None or cur not in tools:
+                    raise ValueError(f"{path}: hole before tool select")
+                holes.append((tools[cur], round(float(m.group(1)), 3),
+                              round(float(m.group(2)), 3)))
+                continue
+            raise ValueError(f"{path}: unparseable drill line {s!r}")
+    return tools, holes
+
+
+def verify_gerbers(dirpath):
+    """Re-parse the written files and check them against the model.
+    Returns a list of error strings (empty = verified)."""
+    errors = []
+
+    def chk(cond, msg):
+        if not cond:
+            errors.append(msg)
+
+    def gpath(name):
+        return os.path.join(dirpath, name)
+
+    # ---- expected geometry from the model ----
+    exp_cu = set()
+    for p in pads:
+        if p["shape"] == "rect":
+            exp_cu.add(("R", round(p["size"], 4), round(p["size"], 4),
+                        round(p["x"], 4), round(p["y"], 4)))
+        else:
+            exp_cu.add(("C", round(p["size"], 4), None,
+                        round(p["x"], 4), round(p["y"], 4)))
+    for v in vias:
+        exp_cu.add(("C", VIA_SIZE, None, round(v["x"], 4), round(v["y"], 4)))
+
+    exp_mask = set()
+    for p in pads:
+        grow = MASK_CLEAR_NPTH if p["npth"] else MASK_CLEAR
+        size = round(p["size"] + grow, 4)
+        shape = "R" if p["shape"] == "rect" else "C"
+        h = size if shape == "R" else None
+        exp_mask.add((shape, size, h, round(p["x"], 4), round(p["y"], 4)))
+    for v in vias:
+        exp_mask.add(("C", round(VIA_SIZE + MASK_CLEAR, 4), None,
+                      round(v["x"], 4), round(v["y"], 4)))
+
+    # ---- copper + mask layers ----
+    for prefix in ("F", "B"):
+        flashes, draws = parse_gerber(gpath(f"opentag-{prefix}_Cu.gbr"))
+        chk(flashes == exp_cu,
+            f"{prefix}_Cu: flashes differ from model "
+            f"(missing {sorted(exp_cu - flashes)[:3]}, "
+            f"extra {sorted(flashes - exp_cu)[:3]})")
+        exp_draws = {_norm_draw(s["w"], s["x1"], s["y1"], s["x2"], s["y2"])
+                     for s in segs if s["layer"] == f"{prefix}.Cu"}
+        chk(draws == exp_draws,
+            f"{prefix}_Cu: tracks differ from model "
+            f"(missing {sorted(exp_draws - draws)[:3]}, "
+            f"extra {sorted(draws - exp_draws)[:3]})")
+        mflashes, mdraws = parse_gerber(gpath(f"opentag-{prefix}_Mask.gbr"))
+        chk(mflashes == exp_mask,
+            f"{prefix}_Mask: openings differ from model "
+            f"(missing {sorted(exp_mask - mflashes)[:3]}, "
+            f"extra {sorted(mflashes - exp_mask)[:3]})")
+        chk(not mdraws, f"{prefix}_Mask: unexpected draws {sorted(mdraws)[:3]}")
+        # every copper shape must have a mask opening at least as large
+        for shape, w, _h, x, y in exp_cu:
+            ok = any(ms[0] == shape and ms[1] >= w - 1e-9
+                     and ms[3] == x and ms[4] == y for ms in mflashes)
+            chk(ok, f"{prefix}_Mask: no opening covers {shape} {w} at ({x},{y})")
+
+    # ---- silkscreen ----
+    for prefix in ("F", "B"):
+        flashes, draws = parse_gerber(gpath(f"opentag-{prefix}_SilkS.gbr"))
+        exp_lines = {_norm_draw(SILK_W, s["x1"], s["y1"], s["x2"], s["y2"])
+                     for s in silks
+                     if s["kind"] == "line" and s["layer"] == f"{prefix}.SilkS"}
+        chk(draws == exp_lines,
+            f"{prefix}_SilkS: lines differ from model "
+            f"(missing {sorted(exp_lines - draws)[:3]}, "
+            f"extra {sorted(draws - exp_lines)[:3]})")
+        exp_text = set()
+        for s in silks:
+            if s["kind"] != "text" or s["layer"] != f"{prefix}.SilkS":
+                continue
+            pixels, px = text_pixels(s["text"], s["size"])
+            for dx, dy in pixels:
+                exp_text.add(("R", round(px, 5), round(px, 5),
+                              round(s["x"] + dx, 4), round(s["y"] + dy, 4)))
+        chk(flashes == exp_text,
+            f"{prefix}_SilkS: text pixels differ from model "
+            f"(missing {sorted(exp_text - flashes)[:3]}, "
+            f"extra {sorted(flashes - exp_text)[:3]})")
+
+    # ---- board outline ----
+    _f, draws = parse_gerber(gpath("opentag-Edge_Cuts.gbr"))
+    hw, hh = BOARD_W / 2.0, BOARD_H / 2.0
+    exp_edge = {_norm_draw(EDGE_W, x1, y1, x2, y2)
+                for (x1, y1), (x2, y2) in
+                (((-hw, -hh), (hw, -hh)), ((hw, -hh), (hw, hh)),
+                 ((hw, hh), (-hw, hh)), ((-hw, hh), (-hw, -hh)))}
+    chk(draws == exp_edge, f"Edge_Cuts: outline differs from model {draws}")
+    xs = sorted({d[1] for d in draws} | {d[3] for d in draws})
+    ys = sorted({d[2] for d in draws} | {d[4] for d in draws})
+    chk(xs[0] == -hw and xs[-1] == hw and ys[0] == -hh and ys[-1] == hh,
+        f"Edge_Cuts: bbox {xs[0]}..{xs[-1]} x {ys[0]}..{ys[-1]} "
+        f"!= {-hw}..{hw} x {-hh}..{hh}")
+
+    # ---- drills ----
+    tools, holes = parse_drill(gpath("opentag.drl"))
+    exp_holes = {(round(p["drill"], 3), round(p["x"], 4), round(p["y"], 4))
+                 for p in pads}
+    exp_holes |= {(VIA_DRILL, round(v["x"], 4), round(v["y"], 4))
+                  for v in vias}
+    got_holes = {(d, round(x, 4), round(y, 4)) for d, x, y in holes}
+    chk(got_holes == exp_holes,
+        f"drill: holes differ from model "
+        f"(missing {sorted(exp_holes - got_holes)[:3]}, "
+        f"extra {sorted(got_holes - exp_holes)[:3]})")
+    chk(len(holes) == len(got_holes), "drill: duplicate holes in file")
+    # every plated hole needs an annular ring (pad or via land);
+    # NPTH must match its hole pad
+    for dia, x, y in got_holes:
+        best = max((p["size"] for p in pads
+                    if round(p["x"], 4) == x and round(p["y"], 4) == y),
+                   default=0.0)
+        if any(round(v["x"], 4) == x and round(v["y"], 4) == y
+               for v in vias):
+            best = max(best, VIA_SIZE)
+        if dia >= 3.0:
+            chk(abs(best - dia) < 1e-6,
+                f"drill: NPTH {dia} at ({x},{y}) has no matching hole pad")
+        else:
+            chk(best >= dia + 0.4,
+                f"drill: hole {dia} at ({x},{y}) pad {best} lacks "
+                f"annular ring (< drill + 0.4)")
+    # plated/NPTH attributes present
+    with open(gpath("opentag.drl")) as f:
+        drl = f.read()
+    chk("TA.AperFunction,Plated,TH" in drl, "drill: no Plated attribute")
+    chk("TA.AperFunction,NonPlated,NPTH" in drl, "drill: no NPTH attribute")
+    return errors
 if __name__ == "__main__":
     sys.exit(main())

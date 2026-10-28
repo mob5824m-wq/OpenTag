@@ -7,3 +7,6 @@ local.properties
 
 # OS
 .DS_Store
+
+# Python cache
+__pycache__/

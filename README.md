@@ -58,6 +58,7 @@ interface map and [`hardware/`](hardware/) for:
 |---|---|
 | `hardware/pcb/opentag-carrier.kicad_pcb` | 90 × 60 mm 2-layer carrier, all through-hole |
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
+| `hardware/pcb/gerbers/` | Fab-ready Gerber set + Excellon drill + `opentag-gerbers.zip` — the generator writes them and re-parses them to verify against the model |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
 | `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps (OpenSCAD source; `.cad` is the project's extension) |
 | `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |

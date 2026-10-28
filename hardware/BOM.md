@@ -7,7 +7,7 @@
 | 1 | ESP32-S3-DevKitC-1 (N8R2 or N16R8, 16 MB flash recommended) | 1 | The 16 MB layout assumed by `partitions_16mb.csv`; an 8 MB board works after switching to a smaller partition table |
 | 2 | PN532Killer (NFC-funs, ST25R3916) | 1 | Replaces a PN532 entirely: presents a real 7-byte UID, 8 emulator slots; get the UART-firmware version |
 | 3 | SSD1351 1.3" 128×128 OLED module, SPI, 7-pin | 1 | 3.3 V, GH1313-style header |
-| 4 | LiPo cell 805040 (3.7 V, ~800 mAh, with protection + JST-PH lead) | 1 | Any 3.7 V cell that fits the shell bay; adjust `bat_*` in the SCAD |
+| 4 | LiPo cell 805040 (3.7 V, ~800 mAh, with protection + JST-PH lead) | 1 | Any 3.7 V cell that fits the shell bay; adjust `bat_*` in the `.cad` |
 | 5 | TP4056 USB-C charging module **with protection** (DW01A + 8205A) | 1 | Must be the 6-pad version with B+/B−/OUT+/OUT− |
 | 6 | MT3608 boost module (adjustable) | 1 | Set to 5.0–5.1 V before installation |
 | 7 | 1N5819 Schottky diode (DO-41) | 1 | Series element on the boost output |
@@ -23,7 +23,7 @@
 | 12 | Male header 1×4, 2.54 mm | 3 | Killer, TP4056, MT3608 |
 | 13 | Tactile switch 6×6 mm, through-hole, ~8.5 mm seated height | 4 | Standard 6.5 × 4.5 mm pin pattern; UP / DOWN / OK / BACK |
 | 14 | JST-PH-2 through-hole connector | 1 | Battery input |
-| 15 | M3 screws + standoffs/nuts | 4 + 4 + 4 | PCB mount (6 mm) and shell closure (10 mm countersunk) |
+| 15 | M3 screws + standoffs/nuts | 4 + 4 + 4 | PCB mount (6 mm) and shell closure (12 mm countersunk) |
 | 16 | Dupont jumper wires, F–F, ~10 cm | 4 | ESP32 ⇄ PN532Killer (3V3, GND, TX, RX) |
 | 17 | Hook-up wire 22–24 AWG | ~8 | TP4056/MT3608 to their headers |
 | 18 | Double-sided foam tape / zip ties | — | Securing modules in the shell tray |
@@ -34,6 +34,14 @@ Print-ready STLs are in `hardware/cad/stl/` (front shell, back plate, button
 cap — print 4 caps). Regenerate them with OpenSCAD
 (`openscad -o front.stl -D 'part="front"' opentag_shell.cad`, etc.) or with
 `python3 tools/cad_to_stl.py`, which also self-checks the mesh.
+
+The shell is a slim two-part clamshell (97.6 × 135.6 × 29.3 mm outside,
+1.8 mm walls): rectangular OLED window with a chamfered bezel, four button
+holes with captive caps, a **fully open** NFC tap window in the back plate
+(no plastic over the Killer's antenna) ringed by an outside cradle that
+centres a controller or phone, a service window over the DevKitC's BOOT/RST
+pads, and a vented power-module tray. Cutouts are placed so nothing needs
+supports: both halves print as drawn (front face-down, plate flat-side-down).
 
 | # | Part | Qty | Material |
 |---|------|----|----------|

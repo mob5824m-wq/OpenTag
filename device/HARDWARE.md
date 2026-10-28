@@ -51,9 +51,11 @@ the amiibo library back to the menu.
 
 ## NFC notes
 
-- The Killer mounts in the shell's back bay behind a thinned (1.0 mm) tap
-  window; keep the battery and boost module on the opposite side of the bay
-  to reduce metal near the antenna.
+- The Killer mounts antenna-side-down in the shell's back bay under a **fully
+  open** tap window (no plastic at all over the antenna — best read range),
+  with a shallow outside cradle that centres a controller or phone on it.
+  Keep the battery and boost module on the opposite side of the bay to
+  reduce metal near the antenna.
 - Emulation presents the dump's own UID; the NDEF-note personality uses a
   random persisted 7-byte UID (`04:…` NXP-style prefix).
 - No cryptographic keys are handled by this project: reading or writing
