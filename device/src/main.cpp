@@ -11,7 +11,33 @@
 #include "ndef_tlv.h"
 #include "ntag215_emu.h"
 #include "pn532_uart.h"
+#include "amiibo_crypto.h"
+#include <mbedtls/aes.h>
+#include <mbedtls/md.h>
 
+// ---- amiibo crypto backends (mbedtls; algorithm tested against amiitool) ----
+
+extern "C" void otAes128CtrXor(const uint8_t *key, const uint8_t *iv,
+                               uint8_t *data, size_t len) {
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+  if (mbedtls_aes_setkey_enc(&aes, key, 128) == 0) {
+    unsigned char nonceCounter[16], streamBlock[16];
+    size_t ncOff = 0;
+    memcpy(nonceCounter, iv, 16);
+    memset(streamBlock, 0, sizeof(streamBlock));
+    mbedtls_aes_crypt_ctr(&aes, len, &ncOff, nonceCounter, streamBlock, data, data);
+  }
+  mbedtls_aes_free(&aes);
+}
+
+extern "C" void otHmacSha256(const uint8_t *key, size_t keyLen,
+                             const uint8_t *data, size_t len, uint8_t *out32) {
+  const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_hmac(info, key, keyLen, data, len, out32);
+}
+
+// ---------------------------------------------------------------------------
 // OpenTag device firmware: ESP32-S3 DevKitC-1 + SSD1351 OLED + PN532Killer
 // (ST25R3916-class NFC emulator) on UART2.
 //
@@ -77,6 +103,25 @@ static size_t recvSize = 0;
 static size_t recvLen = 0;
 static char recvName[Amiibo::kNameLen] = {0};
 static uint8_t recvBuf[572];        // largest accepted container (540 + slack)
+static bool recvIsKeys = false;     // transfer carries key files, not a dump
+
+// ---- amiibo signing keys (user-supplied, stored in NVS, never bundled) ----
+static amiibo::AmiiboKeys retailKeys;
+static bool keysReady = false;
+static void refreshKeyState() {
+  uint8_t data[amiibo::kKeyFileSize] = {0};
+  uint8_t tag[amiibo::kKeyFileSize] = {0};
+  const bool haveData = prefs.getBytes("keys-data", data, sizeof(data)) == sizeof(data);
+  const bool haveTag = prefs.getBytes("keys-tag", tag, sizeof(tag)) == sizeof(tag);
+  keysReady = haveData && haveTag &&
+              amiibo::loadKeyPair(data, sizeof(data), tag, sizeof(tag), &retailKeys);
+}
+
+// ---- write-to-tag flow (TagMo "WRITE TAG (AUTO)" equivalent) ----
+static char writeName[Amiibo::kNameLen] = "";
+static uint8_t writeImage[540];     // armed dump, re-signed at tap time
+static bool writeArmed = false;
+static unsigned long lockAskedAt = 0;
 
 // ---- emulation state ----
 enum EmuMode : uint8_t { EMU_NONE = 0, EMU_NOTE = 1, EMU_AMIIBO = 2 };
@@ -90,7 +135,8 @@ static size_t amiCount = 0;
 static size_t amiSelected = 0;
 static size_t amiTop = 0;
 
-enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_EMULATE };
+enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_EMULATE,
+                         UI_WRITE_TAG, UI_LOCK_CONFIRM };
 static uint8_t uiState = UI_MENU;
 
 static unsigned long lastDraw = 0;
@@ -108,15 +154,52 @@ struct Button {
   bool lastStable = HIGH;
   bool lastRead = HIGH;
   unsigned long changedAt = 0;
+  unsigned long pressStart = 0;
+  unsigned long pressDur = 0;
+  bool heldFired = false;
+  bool pressEdge = false;
+  bool releaseEdge = false;
   explicit Button(int pinNumber) : pin(pinNumber) {}
-  bool pressed() {
+  void update() {
     const bool reading = digitalRead(pin);
     if (reading != lastRead) { lastRead = reading; changedAt = millis(); }
     if (millis() - changedAt > 28 && reading != lastStable) {
       lastStable = reading;
-      if (lastStable == LOW) return true;
+      if (lastStable == LOW) {
+        pressStart = millis();
+        heldFired = false;
+        pressEdge = true;
+      } else {
+        pressDur = millis() - pressStart;
+        releaseEdge = true;
+      }
+    }
+    if (lastStable == HIGH) heldFired = false;
+  }
+  bool pressed() {  // fires once per press, on the debounced press edge
+    update();
+    const bool edge = pressEdge;
+    pressEdge = false;
+    return edge;
+  }
+  // True once when the button has been held down for `ms` (long press).
+  bool held(unsigned long ms) {
+    update();
+    if (lastStable == LOW && !heldFired && millis() - pressStart >= ms) {
+      heldFired = true;
+      return true;
     }
     return false;
+  }
+  // True on release when the press lasted less than `maxHoldMs`. A release
+  // edge older than 250 ms (never polled because the UI state changed while
+  // the button was down) is ignored.
+  bool shortPress(unsigned long maxHoldMs) {
+    update();
+    if (!releaseEdge) return false;
+    releaseEdge = false;
+    if (millis() - changedAt > 250) return false;  // stale edge
+    return pressDur < maxHoldMs;
   }
 };
 Button btnUp(Pins::BUTTON_UP), btnDown(Pins::BUTTON_DOWN), btnOk(Pins::BUTTON_OK);
@@ -319,8 +402,24 @@ void drawScreen(bool force = false) {
       }
       oled.setTextColor(MUTED); oled.setCursor(8, 114);
       oled.print((int)(amiSelected + 1)); oled.print('/'); oled.print((int)amiCount);
-      oled.print(" OK: emulate");
+      oled.print(" OK:emul hold:write");
     }
+  } else if (uiState == UI_WRITE_TAG) {
+    oled.setTextColor(MINT); oled.setCursor(8, 30); oled.print("WRITE AMIIBO");
+    oled.setTextColor(WHITE); oled.setCursor(8, 48);
+    oled.print(String(writeName).substring(0, 16));
+    oled.setTextColor(MUTED); oled.setCursor(8, 66); oled.print("Tap a BLANK NTAG215");
+    oled.setCursor(8, 80); oled.print("to the NFC antenna.");
+    oled.setTextColor(RED); oled.setCursor(8, 100); oled.print("Overwrites the tag");
+    oled.setTextColor(MINT); oled.setCursor(8, 116);
+    oled.print(uiMessage.length() ? uiMessage.substring(0, 19) : "UP/DOWN/OK: cancel");
+  } else if (uiState == UI_LOCK_CONFIRM) {
+    oled.setTextColor(MINT); oled.setCursor(8, 26); oled.print("WRITE VERIFIED");
+    oled.setTextColor(WHITE); oled.setCursor(8, 44); oled.print("Lock this tag?");
+    oled.setTextColor(RED); oled.setCursor(8, 60); oled.print("IRREVERSIBLE!");
+    oled.setTextColor(MUTED); oled.setCursor(8, 80); oled.print("HOLD OK: lock");
+    oled.setCursor(8, 96); oled.print("short OK: skip lock");
+    oled.setCursor(8, 112); oled.print("(auto-skips in 15 s)");
   } else if (uiState == UI_EMULATE) {
     oled.setTextColor(MINT); oled.setCursor(8, 32); oled.print("EMULATING");
     oled.setTextColor(WHITE); oled.setCursor(8, 48);
@@ -428,6 +527,112 @@ bool startAmiiboEmulation(const char *name) {
   return startEmulation(image, name, EMU_AMIIBO);
 }
 
+// ---------------------------------------------------------------------------
+// Amiibo write-to-tag (TagMo writeToTagAuto sequence)
+// ---------------------------------------------------------------------------
+
+enum WriteResult : uint8_t {
+  WRES_OK = 0,
+  WRES_IO,            // tag vanished mid-write
+  WRES_NOT_NTAG215,   // GET_VERSION says this is not an NTAG215
+  WRES_LOCKED,        // tag already holds a locked amiibo
+  WRES_BAD_DUMP,      // dump did not verify under the loaded keys
+  WRES_WRITE,         // page program failed
+  WRES_VERIFY,        // readback mismatch
+};
+
+static bool tagIsNtag215() {
+  const uint8_t getVersion[1] = {0x60};
+  uint8_t rx[16];
+  size_t rxLen = 0;
+  if (!nfc.inDataExchange(getVersion, sizeof(getVersion), rx, &rxLen)) return false;
+  return rxLen == 8 && rx[2] == 0x04 && rx[6] == 0x11;  // NTAG215, 504 bytes
+}
+
+// Writes the armed, re-signed image to the tag on the antenna. The tag must
+// have been detected this loop iteration (it stays selected for a short
+// while afterwards, which covers the whole ~2 s blocking flow).
+static WriteResult writeArmedImage() {
+  uint8_t idPages[16] = {0};
+  if (!nfc.ntagReadPage(0, idPages)) return WRES_IO;           // pages 0..3
+  if (!tagIsNtag215()) return WRES_NOT_NTAG215;
+  // TagMo validateBlankTag: static lock bytes 0F E0 mean "already an amiibo".
+  if (idPages[10] == 0x0F && idPages[11] == 0xE0) return WRES_LOCKED;
+
+  uint8_t image[540];
+  memcpy(image, writeImage, sizeof(image));
+  if (!amiibo::resign(&retailKeys, image, idPages)) return WRES_BAD_DUMP;
+
+  for (uint8_t page = 3; page <= 129; page++) {
+    if (!nfc.ntagWritePage(page, &image[page * 4])) return WRES_WRITE;
+  }
+  // TagMo order: PACK first, then PWD.
+  if (!nfc.ntagWritePage(134, &image[134 * 4])) return WRES_WRITE;  // PACK
+  if (!nfc.ntagWritePage(133, &image[133 * 4])) return WRES_WRITE;  // PWD
+
+  // Read back and compare pages 3..129 (4-page reads) plus PWD/PACK.
+  for (uint8_t page = 3; page <= 127; page += 4) {
+    uint8_t rb[16];
+    if (!nfc.ntagReadPage(page, rb)) return WRES_VERIFY;
+    for (uint8_t i = 0; i < 16; i++) {
+      const uint8_t p = page + i;
+      if (p > 129) break;
+      if (rb[i] != image[p * 4 + i]) return WRES_VERIFY;
+    }
+  }
+  uint8_t rb[16];
+  if (!nfc.ntagReadPage(133, rb)) return WRES_VERIFY;
+  if (memcmp(rb, &image[133 * 4], 8) != 0) return WRES_VERIFY;  // 133 + 134
+
+  // PWD_AUTH must return the PACK we wrote.
+  const uint8_t auth[5] = {0x1B, image[532], image[533], image[534], image[535]};
+  uint8_t ack[16];
+  size_t ackLen = 0;
+  if (!nfc.inDataExchange(auth, sizeof(auth), ack, &ackLen) || ackLen < 2 ||
+      ack[0] != 0x80 || ack[1] != 0x80)
+    return WRES_VERIFY;
+  return WRES_OK;
+}
+
+// Irreversible: locks the tag to the amiibo just written (TagMo writeLockInfo
+// byte-for-byte). Requires the same tag still on the antenna.
+static bool lockWrittenTag() {
+  uint8_t idPages[16] = {0};
+  if (!nfc.ntagReadPage(0, idPages)) return false;
+  const uint8_t page2[4] = {idPages[8], idPages[9], 0x0F, 0xE0};  // static lock
+  if (!nfc.ntagWritePage(2, page2)) return false;
+  const uint8_t page130[4] = {0x01, 0x00, 0x0F, 0x00};  // dynamic lock
+  if (!nfc.ntagWritePage(130, page130)) return false;
+  const uint8_t page131[4] = {0x00, 0x00, 0x00, 0x04};  // AUTH0 = 4
+  if (!nfc.ntagWritePage(131, page131)) return false;
+  const uint8_t page132[4] = {0x5F, 0x00, 0x00, 0x00};  // CFG1
+  if (!nfc.ntagWritePage(132, page132)) return false;
+  return true;
+}
+
+// Arms the write flow: the dump is loaded now; re-signing happens at tap
+// time against the tag's own UID.
+static bool armAmiiboWrite(const char *name) {
+  if (!keysReady) return false;
+  if (!loadAmiiboImage(name, writeImage)) return false;
+  stopEmulation();
+  strlcpy(writeName, name, sizeof(writeName));
+  writeArmed = true;
+  uiState = UI_WRITE_TAG;
+  uiMessage = "";
+  char status[96];
+  snprintf(status, sizeof(status), "OK:write-armed:%s", name);
+  setStatus(status);
+  drawScreen(true);
+  return true;
+}
+
+static void disarmAmiiboWrite() {
+  writeArmed = false;
+  writeName[0] = '\0';
+  memset(writeImage, 0, sizeof(writeImage));
+}
+
 // While the note is being emulated, a freshly synced note is pushed into the
 // emulator slot so the next tap serves the new content.
 void adoptSyncedNoteDuringEmulation() {
@@ -517,11 +722,78 @@ void handleAmiiboPut(char *rest) {
   recvSeq = 0;
   recvAckWanted = false;
   recvSize = (size_t)size;
+  recvIsKeys = false;
   strlcpy(recvName, name, sizeof(recvName));
   portEXIT_CRITICAL(&stateMux);
   char status[80];
   snprintf(status, sizeof(status), "OK:ami-put:%s", name);
   setStatus(status);
+}
+
+void handleKeyPut(char *rest) {
+  char *end = nullptr;
+  const long size = strtol(rest, &end, 10);
+  if (end == rest || *end != '\0' || (size != 80 && size != 160)) {
+    setStatus("ERR:key-size");
+    return;
+  }
+  portENTER_CRITICAL(&stateMux);
+  recvActive = true;
+  recvComplete = false;
+  recvLen = 0;
+  recvSeq = 0;
+  recvAckWanted = false;
+  recvSize = (size_t)size;
+  recvIsKeys = true;
+  recvName[0] = '\0';
+  portEXIT_CRITICAL(&stateMux);
+  setStatus("OK:key-put");
+}
+
+// One 80-byte key file arrived: identify it by type string and stage it.
+static void stageKeyFile(const uint8_t *file) {
+  const amiibo::KeyFileKind kind = amiibo::identifyKeyFile(file, amiibo::kKeyFileSize);
+  const char *blob = (kind == amiibo::KEY_DATA) ? "keys-data" : "keys-tag";
+  prefs.putBytes(blob, file, amiibo::kKeyFileSize);
+}
+
+static void finalizeKeyUpload() {
+  size_t size;
+  uint8_t buf[160];
+  portENTER_CRITICAL(&stateMux);
+  size = recvSize;
+  memcpy(buf, recvBuf, size < sizeof(buf) ? size : sizeof(buf));
+  recvActive = false;
+  recvComplete = false;
+  recvLen = 0;
+  recvSeq = 0;
+  recvSize = 0;
+  portEXIT_CRITICAL(&stateMux);
+
+  if (size == 160) {
+    amiibo::AmiiboKeys keys;
+    if (!amiibo::loadKeyPair(buf, 80, buf + 80, 80, &keys)) {
+      setStatus("ERR:key-invalid");
+      return;
+    }
+    prefs.putBytes("keys-data", &keys.data, amiibo::kKeyFileSize);
+    prefs.putBytes("keys-tag", &keys.tag, amiibo::kKeyFileSize);
+  } else {  // 80: single file, identified by its type string
+    if (amiibo::identifyKeyFile(buf, amiibo::kKeyFileSize) == amiibo::KEY_UNKNOWN) {
+      setStatus("ERR:key-invalid");
+      return;
+    }
+    stageKeyFile(buf);
+  }
+  refreshKeyState();
+  if (keysReady) {
+    setStatus("OK:keys-saved");
+    uiMessage = "Keys loaded";
+  } else {
+    setStatus("OK:keys-partial");
+    uiMessage = "Need both key files";
+  }
+  if (uiState == UI_MENU) drawScreen(true);
 }
 
 static bool takeBleCommand(char *out, size_t cap) {
@@ -563,6 +835,14 @@ void processBleCommands() {
   if (strncmp(cmd, "AMI:", 4) == 0) {
     char *rest = cmd + 4;
     if (strncmp(rest, "PUT:", 4) == 0) { handleAmiiboPut(rest + 4); return; }
+    if (strncmp(rest, "WRITE:", 6) == 0) {
+      char name[Amiibo::kNameLen];
+      if (!sanitizeName(rest + 6, name, sizeof(name))) { setStatus("ERR:ami-name"); return; }
+      if (!keysReady) { setStatus("ERR:keys-needed"); return; }
+      if (!nfcReady) { setStatus("ERR:nfc-absent"); return; }
+      if (!armAmiiboWrite(name)) { setStatus("ERR:not-found"); return; }
+      return;
+    }
     if (strcmp(rest, "ABORT") == 0) {
       portENTER_CRITICAL(&stateMux);
       recvActive = false;
@@ -570,6 +850,12 @@ void processBleCommands() {
       recvLen = 0;
       recvSeq = 0;
       portEXIT_CRITICAL(&stateMux);
+      if (writeArmed) {
+        disarmAmiiboWrite();
+        uiState = UI_MENU;
+        uiMessage = "Write cancelled";
+        drawScreen(true);
+      }
       setStatus("OK:ami-abort");
       return;
     }
@@ -607,7 +893,36 @@ void processBleCommands() {
     return;
   }
 
-  if (strcmp(cmd, "STOP") == 0) { stopEmulation(); return; }
+  if (strncmp(cmd, "KEY:", 4) == 0) {
+    char *rest = cmd + 4;
+    if (strncmp(rest, "PUT:", 4) == 0) { handleKeyPut(rest + 4); return; }
+    if (strcmp(rest, "STATUS") == 0) {
+      refreshKeyState();
+      setStatus(keysReady ? "OK:keys:ready" : "OK:keys:none-or-partial");
+      return;
+    }
+    if (strcmp(rest, "CLEAR") == 0) {
+      prefs.remove("keys-data");
+      prefs.remove("keys-tag");
+      memset(&retailKeys, 0, sizeof(retailKeys));
+      keysReady = false;
+      setStatus("OK:keys-cleared");
+      return;
+    }
+    setStatus("ERR:unknown-command");
+    return;
+  }
+
+  if (strcmp(cmd, "STOP") == 0) {
+    stopEmulation();
+    if (writeArmed) {
+      disarmAmiiboWrite();
+      uiState = UI_MENU;
+      uiMessage = "Write cancelled";
+      drawScreen(true);
+    }
+    return;
+  }
 
   if (strcmp(cmd, "STAT") == 0) {
     char status[96];
@@ -643,7 +958,18 @@ void handleButtons() {
   } else if (uiState == UI_LIBRARY) {
     if (btnUp.pressed() && amiCount) { amiSelected = (amiSelected + amiCount - 1) % amiCount; drawScreen(true); }
     if (btnDown.pressed() && amiCount) { amiSelected = (amiSelected + 1) % amiCount; drawScreen(true); }
-    if (btnOk.pressed()) {
+    // Long-press OK: write the selected amiibo to a physical NTAG215.
+    if (btnOk.held(1000)) {
+      if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
+      if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); return; }
+      if (!keysReady) { uiMessage = "Upload key files first"; drawScreen(true); return; }
+      if (!armAmiiboWrite(amiNames[amiSelected])) {
+        uiMessage = "Load failed";
+        drawScreen(true);
+      }
+      return;
+    }
+    if (btnOk.shortPress(1000)) {
       if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
       if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); return; }
       if (!startAmiiboEmulation(amiNames[amiSelected])) {
@@ -651,6 +977,30 @@ void handleButtons() {
         setStatus("ERR:ami-emulate");
         drawScreen(true);
       }
+    }
+  } else if (uiState == UI_WRITE_TAG) {
+    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed()) {
+      disarmAmiiboWrite();
+      uiState = UI_MENU;
+      uiMessage = "Write cancelled";
+      drawScreen(true);
+    }
+  } else if (uiState == UI_LOCK_CONFIRM) {
+    // Locking is irreversible, so it needs an explicit long press here.
+    if (btnOk.held(1200)) {
+      uiMessage = "Locking...";
+      drawScreen(true);
+      const bool ok = lockWrittenTag();
+      uiState = UI_MENU;
+      uiMessage = ok ? "Tag locked" : "Lock failed";
+      setStatus(ok ? "OK:locked" : "ERR:lock-failed");
+      drawScreen(true);
+    } else if (btnOk.shortPress(1200) || btnUp.pressed() || btnDown.pressed() ||
+               millis() - lockAskedAt > 15000) {
+      uiState = UI_MENU;
+      uiMessage = "Left unlocked";
+      setStatus("OK:lock-skipped");
+      drawScreen(true);
     }
   } else if (uiState == UI_EMULATE) {
     if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed()) {
@@ -706,6 +1056,8 @@ void loadPending() {
     for (size_t i = 1; i < 7; i++) emuUid[i] = static_cast<uint8_t>(random(256));
     prefs.putBytes("emuid7", emuUid + 1, 6);
   }
+  // Amiibo signing keys, if the user uploaded them over BLE.
+  refreshKeyState();
 }
 
 void setup() {
@@ -748,12 +1100,20 @@ void loop() {
     setStatus(status);
   }
 
-  // Finished a .bin transfer: validate and store.
+  // Finished a binary transfer: store the dump or the key files.
   bool complete = false;
+  bool completeIsKeys = false;
   portENTER_CRITICAL(&stateMux);
-  if (recvComplete) { complete = true; recvComplete = false; }
+  if (recvComplete) {
+    complete = true;
+    completeIsKeys = recvIsKeys;
+    recvComplete = false;
+  }
   portEXIT_CRITICAL(&stateMux);
-  if (complete) finalizeAmiiboUpload();
+  if (complete) {
+    if (completeIsKeys) finalizeKeyUpload();
+    else finalizeAmiiboUpload();
+  }
 
   processBleCommands();
   adoptSyncedNoteDuringEmulation();
@@ -792,6 +1152,48 @@ void loop() {
         uiMessage = "";
       } else {
         uiMessage = "Not an NTAG215 NDEF tag";
+      }
+      drawScreen(true);
+    }
+  }
+
+  // Poll for a tag while the amiibo write flow is armed, then run the
+  // TagMo-style write (blocking, ~2 s: re-sign, 129 page writes, verify).
+  if (uiState == UI_WRITE_TAG && nfcReady && millis() - lastNfcPoll > 120) {
+    lastNfcPoll = millis();
+    uint8_t uid[7] = {0};
+    uint8_t uidLen = 0;
+    if (nfc.readPassiveTarget(uid, &uidLen, 60)) {
+      uiMessage = "Signing + writing";
+      drawScreen(true);
+      const WriteResult result = writeArmedImage();
+      disarmAmiiboWrite();
+      switch (result) {
+        case WRES_OK:
+          uiState = UI_LOCK_CONFIRM;
+          lockAskedAt = millis();
+          uiMessage = "";
+          setStatus("OK:written-and-verified");
+          break;
+        case WRES_IO:
+          uiState = UI_MENU; uiMessage = "Tag lost"; setStatus("ERR:write-tag-lost");
+          break;
+        case WRES_NOT_NTAG215:
+          uiState = UI_MENU; uiMessage = "Not an NTAG215";
+          setStatus("ERR:write-failed-or-not-NTAG215");
+          break;
+        case WRES_LOCKED:
+          uiState = UI_MENU; uiMessage = "Tag already locked"; setStatus("ERR:write-tag-locked");
+          break;
+        case WRES_BAD_DUMP:
+          uiState = UI_MENU; uiMessage = "Dump failed verify"; setStatus("ERR:write-dump");
+          break;
+        case WRES_WRITE:
+          uiState = UI_MENU; uiMessage = "Write failed"; setStatus("ERR:write-failed");
+          break;
+        default:
+          uiState = UI_MENU; uiMessage = "Verify failed"; setStatus("ERR:write-verify");
+          break;
       }
       drawScreen(true);
     }

@@ -19,7 +19,7 @@
 <body><main>
   <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
   <h1>Your tags,<br>ready to tap.</h1>
-  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, or upload a .zip of your own NTAG215 amiibo backups to the on-device library and emulate any of them from the OLED menu.</p>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — or re-sign and write them to blank NTAG215 tags with your TagMo key files.</p>
   <section class="card">
     <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
@@ -42,6 +42,14 @@
     <strong style="font-size:13px">On device</strong>
     <div id="deviceLib" class="library"></div>
     <p class="sub warning">Use only backups of amiibo you own. Amiibo data is Nintendo proprietary; this page and the device never bundle or generate it — you supply your own dumps.</p>
+  </section>
+
+  <section class="card">
+    <strong>Amiibo signing keys</strong>
+    <p class="sub">To <b>write</b> a dump to a physical NTAG215, the device re-signs it (TagMo-style) with your <b>unfixed-info.bin</b> and <b>locked-secret.bin</b> key files — the same pair TagMo loads. A combined 160-byte retail key file also works. Files are identified by their embedded type string, stored in the device's NVS, and never bundled with this project or sent anywhere else.</p>
+    <div class="row"><label class="filebtn" for="keyFiles">Choose key .bin files</label><input id="keyFiles" class="hidden" type="file" accept=".bin,.dat,.retail" multiple><button id="uploadKeys" disabled>Upload keys</button><button id="keyStatusBtn" class="secondary" disabled>Check status</button><button id="forgetKeys" class="secondary" disabled>Forget keys</button></div>
+    <div class="row" style="margin-top:10px"><span class="sub">Key state:</span>&nbsp;<span id="keyState" class="sub"><i>unknown — connect and check</i></span></div>
+    <p class="sub warning">Only use key files you legally extracted yourself. Uploading them is your responsibility.</p>
   </section>
   <p class="foot">OpenTag is an independent open-source project. NFC writes replace the existing NDEF area of the selected NTAG215. Confirm on the device before writing; only use tags you own or are authorized to program.</p>
 </main>
@@ -260,7 +268,7 @@
   function setState(text, mode = '') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
   function setConnectedButtons(on) {
     $('disconnect').disabled = !on;
-    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu']) $(id).disabled = !on;
+    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu', 'uploadKeys', 'keyStatusBtn', 'forgetKeys']) $(id).disabled = !on;
   }
 
   function expect(prefix, timeoutMs) {
@@ -325,14 +333,89 @@
       emu.onclick = async () => {
         try { await sendCmd('AMI:EMU:' + name); await expect('OK:emulating', 5000); } catch (e) { log(e.message, 'err'); }
       };
+      const wr = document.createElement('button'); wr.textContent = 'Write to tag';
+      wr.title = 'Arm the device to re-sign and write this amiibo to a blank NTAG215';
+      wr.onclick = async () => {
+        try {
+          await sendCmd('AMI:WRITE:' + name);
+          await expect('OK:write-armed', 4000);
+          log('Armed. Tap a BLANK NTAG215 on the device antenna — it will be re-signed and written, then verified. Locking is confirmed on the device.', 'ok');
+        } catch (e) { log(e.message, 'err'); }
+      };
       const del = document.createElement('button'); del.className = 'secondary'; del.textContent = '×';
       del.setAttribute('aria-label', 'Delete from device');
       del.onclick = async () => {
         try { await sendCmd('AMI:DEL:' + name); await expect('OK:ami-deleted', 3000); await refreshLibrary(); } catch (e) { log(e.message, 'err'); }
       };
-      row.append(tag, copy, emu, del); root.append(row);
+      row.append(tag, copy, emu, wr, del); root.append(row);
     });
   }
+
+  // ---------- amiibo signing keys ----------
+
+  // Mirror of the device-side check: 80-byte key files carry their type in a
+  // 14-byte NUL-terminated string at offset 16.
+  function keyFileKind(bytes) {
+    if (bytes.length !== 80 && bytes.length !== 160) return null;
+    for (let off = 0; off < bytes.length; off += 80) {
+      const ts = new TextDecoder().decode(bytes.subarray(off + 16, off + 30));
+      const nul = ts.indexOf('\0');
+      if (nul < 0) return null;
+      const kind = ts.slice(0, nul);
+      if (kind !== 'unfixed infos' && kind !== 'locked secret') return null;
+    }
+    return true;
+  }
+
+  async function uploadKeyBytes(bytes, label) {
+    await sendCmd(`KEY:PUT:${bytes.length}`);
+    await expect('OK:key-put', 4000);
+    let chunk = 240, seq = 0, off = 0;
+    while (off < bytes.length) {
+      const n = Math.min(chunk, bytes.length - off);
+      const frame = new Uint8Array(3 + n);
+      frame[0] = (seq >> 8) & 0xFF; frame[1] = seq & 0xFF; frame[2] = n;
+      frame.set(bytes.subarray(off, off + n), 3);
+      try {
+        if (dataCh.writeValueWithoutResponse) await dataCh.writeValueWithoutResponse(frame);
+        else await dataCh.writeValueWithResponse(frame);
+      } catch (e) {
+        if (chunk > 20) { chunk = Math.max(20, Math.floor(chunk / 2)); log(`Retrying with ${chunk}-byte chunks`); continue; }
+        throw e;
+      }
+      off += n; seq++;
+    }
+    const done = await expect('OK:keys-', 8000);
+    log(`${label}: ${done}`, 'ok');
+  }
+
+  async function refreshKeyStatus() {
+    try {
+      const r = await (async () => { await sendCmd('KEY:STATUS'); return expect('OK:keys:', 3000); })();
+      const ready = r.includes('ready');
+      $('keyState').innerHTML = ready
+        ? '<b>ready</b> — both key files loaded, writes enabled'
+        : '<b>missing or partial</b> — upload both unfixed-info.bin and locked-secret.bin';
+    } catch (e) { log(e.message, 'err'); }
+  }
+
+  $('uploadKeys').onclick = async () => {
+    const files = [...$('keyFiles').files];
+    if (!files.length) { log('Choose your key files first (unfixed-info.bin, locked-secret.bin — or one combined 160-byte retail file).', 'err'); return; }
+    for (const f of files) {
+      try {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        if (!keyFileKind(bytes)) { log(`${f.name}: not a valid 80/160-byte key file (type string check failed).`, 'err'); continue; }
+        await uploadKeyBytes(bytes, f.name);
+      } catch (e) { log(e.message, 'err'); }
+    }
+    await refreshKeyStatus();
+  };
+  $('keyStatusBtn').onclick = refreshKeyStatus;
+  $('forgetKeys').onclick = async () => {
+    try { await sendCmd('KEY:CLEAR'); await expect('OK:keys-cleared', 3000); } catch (e) { log(e.message, 'err'); }
+    $('keyState').textContent = 'no keys on device';
+  };
 
   // Chunked transfer to the DATA characteristic. Adapts the chunk size if the
   // negotiated ATT MTU is smaller than assumed.
@@ -422,6 +505,7 @@
       setState(device.name || 'OpenTag connected', 'ok');
       log('Connected. Requesting library…');
       await refreshLibrary();
+      await refreshKeyStatus();
     } catch (e) { setState('Not connected', 'err'); log(e.message, 'err'); }
   };
   $('disconnect').onclick = () => { if (device && device.gatt.connected) device.gatt.disconnect(); };
