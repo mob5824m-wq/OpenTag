@@ -9,112 +9,354 @@
     :root{color-scheme:dark;--bg:#11151c;--panel:#1b212b;--line:#303a49;--text:#f4f6f8;--muted:#9ba7b7;--mint:#b6f36a;--violet:#bba8ff;--bad:#ff8b8b}
     *{box-sizing:border-box}body{margin:0;background:radial-gradient(800px 500px at 90% -10%,#28334b 0,transparent 65%),var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;min-height:100vh}
     main{max-width:880px;margin:auto;padding:28px 18px 56px}.brand{display:flex;align-items:center;gap:12px;margin:4px 0 30px}.mark{background:var(--mint);color:#10131b;width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-weight:900;font-size:20px}.brand strong{font-size:20px;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);letter-spacing:1.5px;font-size:10px;font-weight:700}
-    h1{font-size:clamp(30px,7vw,47px);line-height:1.06;letter-spacing:-1.7px;margin:0 0 12px}.lede{color:var(--muted);max-width:630px;margin:0 0 24px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.card{background:linear-gradient(145deg,#202735,#1a2029);border:1px solid #2b3442;border-radius:22px;padding:20px;margin:16px 0}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#697789}.dot.ok{background:var(--mint);box-shadow:0 0 14px #b6f36a77}.dot.err{background:var(--bad)}
+    h1{font-size:clamp(30px,7vw,47px);line-height:1.06;letter-spacing:-1.7px;margin:0 0 12px}.lede{color:var(--muted);max-width:680px;margin:0 0 24px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.card{background:linear-gradient(145deg,#202735,#1a2029);border:1px solid #2b3442;border-radius:22px;padding:20px;margin:16px 0}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#697789}.dot.ok{background:var(--mint);box-shadow:0 0 14px #b6f36a77}.dot.err{background:var(--bad)}
     button,.filebtn{border:0;border-radius:13px;padding:12px 16px;background:var(--mint);color:#10131b;font-weight:750;cursor:pointer;font:inherit;font-size:13px}button.secondary,.filebtn{background:#2a3341;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:7px;flex:1;min-width:210px}.field label{font-size:12px;color:var(--muted);font-weight:650}input,select{width:100%;border:1px solid var(--line);background:#111720;color:var(--text);border-radius:12px;padding:12px 13px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--mint)}.sub{font-size:12px;color:var(--muted)}
-    .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px}
+    .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px;white-space:nowrap}.tag.ok{color:var(--mint);border-color:#5b7135}.tag.bad{color:var(--bad);border-color:#7a4040}
     .notice{font-size:12px;color:var(--muted);border-left:3px solid var(--violet);padding:3px 0 3px 12px;margin:13px 0}.warning{color:#ffcc9b}.rule{height:1px;background:#2b3442;margin:17px 0}.foot{font-size:11px;color:var(--muted);max-width:700px;margin:22px 0 0}.hidden{display:none!important}
+    #log{background:#0d1117;border:1px solid #232c39;border-radius:13px;padding:11px 13px;font:12px/1.6 ui-monospace,monospace;color:#a8b4c6;max-height:190px;overflow-y:auto;white-space:pre-wrap;margin-top:13px}
   </style>
 </head>
 <body><main>
   <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
-  <h1>Your notes,<br>ready to tap.</h1>
-  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE. The device can write standard NDEF records to a supported NTAG215. It does not accept tag images or proprietary data files.</p>
+  <h1>Your tags,<br>ready to tap.</h1>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, or upload a .zip of your own NTAG215 amiibo backups to the on-device library and emulate any of them from the OLED menu.</p>
   <section class="card">
     <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
-    <div class="notice">This page sends only the selected text or URL note. It never reads or imports raw NFC tag memory.</div>
+    <div class="notice">The device answers with status lines shown in the log below.</div>
+    <div id="log" aria-live="polite"></div>
   </section>
+
   <section class="card">
-    <strong>Add a note</strong><p class="sub">Only ordinary text and HTTP(S) URLs are supported. Maximum 200 UTF-8 bytes.</p>
-    <form id="addForm"><div class="row"><div class="field"><label for="kind">Record type</label><select id="kind"><option value="TEXT">Text</option><option value="URL">Web URL</option></select></div><div class="field" style="flex:3"><label for="value">Content</label><input id="value" maxlength="200" required placeholder="A short note or https://example.com"></div><button type="submit">Add to library</button></div></form>
-    <div class="row" style="margin-top:15px"><button id="export" class="secondary">Export notes JSON</button><label class="filebtn" for="importFile">Import notes JSON</label><input id="importFile" class="hidden" type="file" accept=".json,application/json"></div>
-    <p class="sub warning">Binary tag dumps (.bin), encrypted data, and arbitrary file uploads are intentionally unsupported.</p>
-    <div id="library" class="library"></div>
+    <strong>NDEF note</strong><p class="sub">Plain text or HTTP(S) URL, up to 200 UTF-8 bytes. Written to NTAG215 tags or emulated as a virtual tag.</p>
+    <form id="addForm"><div class="row"><div class="field"><label for="kind">Record type</label><select id="kind"><option value="TEXT">Text</option><option value="URL">Web URL</option></select></div><div class="field" style="flex:3"><label for="value">Content</label><input id="value" maxlength="200" required placeholder="A short note or https://example.com"></div><button type="submit">Queue note</button></div></form>
+    <div class="row" style="margin-top:15px"><button id="send" class="secondary" disabled>Send note now</button><button id="clear" class="secondary" disabled>Clear device note</button></div>
   </section>
-  <section class="card"><strong>Device response</strong><p id="response" class="sub">Connect to OpenTag to sync a note.</p></section>
-  <p class="foot">OpenTag is an independent open-source project. NFC write operations replace the existing user NDEF area on the selected NTAG215. Confirm on the device before writing; always use tags you own or are authorized to program.</p>
+
+  <section class="card">
+    <strong>Amiibo library</strong>
+    <p class="sub">Upload a <b>.zip</b> (or loose <b>.bin</b> files) of NTAG215 dumps from your own collection. Dumps are unzipped in your browser, validated, then copied to the device over BLE. Nothing is uploaded to any server.</p>
+    <div class="row"><label class="filebtn" for="zipFile">Choose .zip / .bin files</label><input id="zipFile" class="hidden" type="file" accept=".zip,.bin,application/zip" multiple><button id="syncZip" disabled>Sync to device</button><button id="refresh" class="secondary" disabled>Refresh list</button><button id="stopEmu" class="secondary" disabled>Stop emulation</button></div>
+    <div id="parsed" class="library"></div>
+    <div class="rule"></div>
+    <strong style="font-size:13px">On device</strong>
+    <div id="deviceLib" class="library"></div>
+    <p class="sub warning">Use only backups of amiibo you own. Amiibo data is Nintendo proprietary; this page and the device never bundle or generate it — you supply your own dumps.</p>
+  </section>
+  <p class="foot">OpenTag is an independent open-source project. NFC writes replace the existing NDEF area of the selected NTAG215. Confirm on the device before writing; only use tags you own or are authorized to program.</p>
 </main>
 <script>
 (() => {
   const SERVICE = '9b9e0001-9d2a-4b72-9a0c-6a8f6f4d0001';
-  const WRITE = '9b9e0002-9d2a-4b72-9a0c-6a8f6f4d0001';
-  const STATUS = '9b9e0003-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const WRITE   = '9b9e0002-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const STATUS  = '9b9e0003-9d2a-4b72-9a0c-6a8f6f4d0001';
+  const DATA    = '9b9e0004-9d2a-4b72-9a0c-6a8f6f4d0001';
   const $ = id => document.getElementById(id);
-  let device = null, server = null, tx = null, status = null;
-  let library = [];
-  try { library = validateRecords(JSON.parse(localStorage.getItem('opentag_notes') || '[]')); } catch (_) { library = []; }
+  let device = null, server = null, tx = null, status = null, dataCh = null;
+  let note = { kind: 'TEXT', value: '' };
+  let parsed = [];        // [{name, data, uidHex, valid, reason}]
+  let deviceLib = [];     // names from AMI:LIST
+  let listing = false;
+  let waiter = null;      // {prefix, resolve, reject, timer}
 
-  function bytes(s) { return new TextEncoder().encode(s).length; }
-  function validateRecords(value) {
-    if (!Array.isArray(value)) throw new Error('Expected a JSON array of notes.');
-    if (value.length > 250) throw new Error('A library can contain at most 250 notes.');
-    return value.map((item, i) => {
-      if (!item || !['TEXT','URL'].includes(item.kind) || typeof item.value !== 'string') throw new Error(`Invalid note at position ${i + 1}.`);
-      const v = item.value.trim();
-      if (!v || bytes(v) > 200 || /[\r\n\0]/.test(v)) throw new Error(`Note ${i + 1} is empty, too long, or has unsupported characters.`);
-      if (item.kind === 'URL' && !/^https?:\/\//i.test(v)) throw new Error(`URL note ${i + 1} must start with http:// or https://.`);
-      return { kind: item.kind, value: v };
-    });
+  // ---------- log ----------
+  const logEl = $('log');
+  function log(line, cls) {
+    const d = document.createElement('div');
+    if (cls) d.style.color = cls === 'err' ? 'var(--bad)' : 'var(--mint)';
+    d.textContent = line;
+    logEl.append(d);
+    while (logEl.children.length > 60) logEl.firstChild.remove();
+    logEl.scrollTop = logEl.scrollHeight;
   }
-  function save() { localStorage.setItem('opentag_notes', JSON.stringify(library)); render(); }
-  function setState(text, mode='') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
-  function render() {
-    const root = $('library'); root.replaceChildren();
-    library.forEach((item, i) => {
+
+  // ---------- dump validation (mirror of device ntag215::validateDump) ----------
+  function validateDump(buf) {
+    if (buf.length < 532) return 'too short';
+    if (buf.length > 572) return 'too long';
+    if (((0x88 ^ buf[0] ^ buf[1] ^ buf[2]) & 0xFF) !== buf[3]) return 'bad UID BCC0';
+    if (buf[12] !== 0xE1 || buf[13] !== 0x10 || buf[14] !== 0x3E) return 'not an NTAG215 CC';
+    if (buf[0] !== 0x04) return 'not an NXP UID';
+    return null;
+  }
+  function uidHex(buf) {
+    return [...buf.slice(0, 3), ...buf.slice(4, 8)].map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+  }
+  function cleanName(raw) {
+    const base = raw.split(/[\\/]/).pop().replace(/\.bin$/i, '').trim();
+    return base.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 40);
+  }
+
+  // ---------- minimal zip reader (stored + deflate-raw, no deps) ----------
+  async function readZip(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let eocd = -1;
+    for (let i = buf.length - 22; i >= 0; i--) {
+      if (buf[i] === 0x50 && buf[i+1] === 0x4B && buf[i+2] === 0x05 && buf[i+3] === 0x06) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('Not a zip archive (no end-of-central-directory record).');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const out = [];
+    for (let i = 0; i < count && p + 46 <= buf.length; i++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const method = dv.getUint16(p + 10, true);
+      const compSize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(buf.slice(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith('/')) continue;  // directory
+      out.push({ name, method, compSize, local });
+    }
+    for (const e of out) {
+      if (dv.getUint32(e.local, true) !== 0x04034b50) { e.data = null; continue; }
+      const lh = e.local;
+      const lname = dv.getUint16(lh + 26, true), lextra = dv.getUint16(lh + 28, true);
+      const start = lh + 30 + lname + lextra;
+      const raw = buf.slice(start, start + e.compSize);
+      if (e.method === 0) e.data = raw;
+      else if (e.method === 8 && typeof DecompressionStream !== 'undefined') {
+        const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        e.data = new Uint8Array(await new Response(stream).arrayBuffer());
+      } else e.data = null;
+    }
+    return out;
+  }
+
+  // ---------- file intake ----------
+  $('zipFile').onchange = async e => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    const found = [];
+    for (const f of files) {
+      try {
+        if (f.name.toLowerCase().endsWith('.zip')) {
+          const entries = await readZip(f);
+          for (const en of entries) {
+            if (!en.name.toLowerCase().endsWith('.bin') || !en.data) continue;
+            found.push({ name: cleanName(en.name), data: en.data });
+          }
+          log(`${f.name}: ${entries.length} zip entr${entries.length === 1 ? 'y' : 'ies'} scanned`);
+        } else if (f.name.toLowerCase().endsWith('.bin')) {
+          found.push({ name: cleanName(f.name), data: new Uint8Array(await f.arrayBuffer()) });
+        } else {
+          log(`Skipped ${f.name} (not .zip/.bin)`, 'err');
+        }
+      } catch (err) { log(`${f.name}: ${err.message}`, 'err'); }
+    }
+    const seen = new Set(parsed.map(x => x.name));
+    let ok = 0;
+    for (const f of found) {
+      const reason = validateDump(f.data);
+      const item = { ...f, uidHex: uidHex(f.data), valid: !reason, reason };
+      if (!f.name || seen.has(f.name)) item.name = (f.name || 'tag') + '_' + Math.random().toString(36).slice(2, 6);
+      seen.add(item.name);
+      parsed.push(item);
+      if (item.valid) ok++;
+    }
+    log(`Parsed ${found.length} dump(s): ${ok} valid NTAG215 image(s)`);
+    renderParsed();
+  };
+
+  function renderParsed() {
+    const root = $('parsed'); root.replaceChildren();
+    if (!parsed.length) {
+      const p = document.createElement('p'); p.className = 'sub';
+      p.textContent = 'No files parsed yet. Dumps must be 532–572 byte NTAG215 .bin images.';
+      root.append(p); return;
+    }
+    parsed.forEach((item, i) => {
       const row = document.createElement('div'); row.className = 'item';
-      const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = item.kind;
+      const tag = document.createElement('span'); tag.className = 'tag ' + (item.valid ? 'ok' : 'bad');
+      tag.textContent = item.valid ? 'NTAG215' : 'INVALID';
       const copy = document.createElement('div'); copy.className = 'copy';
-      const strong = document.createElement('strong'); strong.textContent = item.value;
-      const small = document.createElement('small'); small.textContent = `${bytes(item.value)} UTF-8 bytes`;
+      const strong = document.createElement('strong'); strong.textContent = item.name;
+      const small = document.createElement('small');
+      small.textContent = item.valid ? `${item.data.length} B · UID ${item.uidHex}` : (item.reason || 'rejected');
       copy.append(strong, small);
-      const send = document.createElement('button'); send.textContent = 'Send'; send.disabled = !tx; send.onclick = () => sendRecord(item);
-      const remove = document.createElement('button'); remove.className = 'secondary'; remove.textContent = '×'; remove.setAttribute('aria-label','Remove note'); remove.onclick = () => { library.splice(i,1); save(); };
-      row.append(tag, copy, send, remove); root.append(row);
+      const rm = document.createElement('button'); rm.className = 'secondary'; rm.textContent = '×';
+      rm.setAttribute('aria-label', 'Remove'); rm.onclick = () => { parsed.splice(i, 1); renderParsed(); };
+      row.append(tag, copy, rm); root.append(row);
     });
-    if (!library.length) { const p=document.createElement('p'); p.className='sub'; p.textContent='No notes saved yet.'; root.append(p); }
   }
-  async function sendRecord(item) {
+
+  // ---------- BLE ----------
+  function setState(text, mode = '') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
+  function setConnectedButtons(on) {
+    $('disconnect').disabled = !on;
+    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu']) $(id).disabled = !on;
+  }
+
+  function expect(prefix, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      waiter = { prefix, resolve, reject };
+      waiter.timer = setTimeout(() => {
+        if (waiter && waiter.prefix === prefix) { waiter = null; reject(new Error('Timeout waiting for ' + prefix)); }
+      }, timeoutMs);
+    });
+  }
+  function onNotify(text) {
+    log(text, text.startsWith('ERR') ? 'err' : 'ok');
+    if (listing && text.startsWith('AMI:')) {
+      const idx = text.indexOf(':', 4);
+      if (idx > 0) deviceLib.push(text.slice(idx + 1));
+      return;
+    }
+    if (text.startsWith('OK:ami-list:')) {
+      listing = false;
+      renderDeviceLib();
+      if (waiter && waiter.prefix === 'OK:ami-list') { clearTimeout(waiter.timer); const w = waiter; waiter = null; w.resolve(text); }
+      return;
+    }
+    if (waiter && (text.startsWith(waiter.prefix) || text.startsWith('ERR'))) {
+      clearTimeout(waiter.timer);
+      const w = waiter; waiter = null;
+      text.startsWith('ERR') ? w.reject(new Error(text)) : w.resolve(text);
+    }
+  }
+
+  async function sendCmd(str) {
+    if (!tx) throw new Error('Not connected.');
+    await tx.writeValueWithResponse(new TextEncoder().encode(str));
+  }
+
+  async function refreshLibrary() {
     if (!tx) return;
+    deviceLib = []; listing = true;
     try {
-      const wire = new TextEncoder().encode(`${item.kind}:${item.value}`);
-      if (wire.length > 220) throw new Error('Payload exceeds the device BLE limit.');
-      await tx.writeValueWithResponse(wire);
-      $('response').textContent = `Sent ${item.kind.toLowerCase()} note. Confirm the write on the device after presenting an NTAG215.`;
-    } catch (e) { $('response').textContent = `Send failed: ${e.message}`; }
+      await sendCmd('AMI:LIST');
+      await expect('OK:ami-list', 4000);
+    } catch (e) {
+      listing = false;
+      log('List failed: ' + e.message, 'err');
+    }
   }
+
+  function renderDeviceLib() {
+    const root = $('deviceLib'); root.replaceChildren();
+    if (!deviceLib.length) {
+      const p = document.createElement('p'); p.className = 'sub';
+      p.textContent = 'Device library is empty — sync some dumps, then browse them in the Amiibo library menu on the OLED.';
+      root.append(p); return;
+    }
+    deviceLib.forEach(name => {
+      const row = document.createElement('div'); row.className = 'item';
+      const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'BIN';
+      const copy = document.createElement('div'); copy.className = 'copy';
+      const strong = document.createElement('strong'); strong.textContent = name;
+      copy.append(strong);
+      const emu = document.createElement('button'); emu.textContent = 'Emulate';
+      emu.onclick = async () => {
+        try { await sendCmd('AMI:EMU:' + name); await expect('OK:emulating', 5000); } catch (e) { log(e.message, 'err'); }
+      };
+      const del = document.createElement('button'); del.className = 'secondary'; del.textContent = '×';
+      del.setAttribute('aria-label', 'Delete from device');
+      del.onclick = async () => {
+        try { await sendCmd('AMI:DEL:' + name); await expect('OK:ami-deleted', 3000); await refreshLibrary(); } catch (e) { log(e.message, 'err'); }
+      };
+      row.append(tag, copy, emu, del); root.append(row);
+    });
+  }
+
+  // Chunked transfer to the DATA characteristic. Adapts the chunk size if the
+  // negotiated ATT MTU is smaller than assumed.
+  async function uploadOne(item) {
+    const size = item.data.length;
+    await sendCmd(`AMI:PUT:${item.name}:${size}`);
+    await expect('OK:ami-put', 4000);
+    let chunk = 240, seq = 0, off = 0;
+    while (off < size) {
+      let n = Math.min(chunk, size - off);
+      const frame = new Uint8Array(3 + n);
+      frame[0] = (seq >> 8) & 0xFF; frame[1] = seq & 0xFF; frame[2] = n;
+      frame.set(item.data.subarray(off, off + n), 3);
+      try {
+        if (dataCh.writeValueWithoutResponse) await dataCh.writeValueWithoutResponse(frame);
+        else await dataCh.writeValueWithResponse(frame);
+      } catch (e) {
+        if (chunk > 20) { chunk = Math.max(20, Math.floor(chunk / 2)); log(`Retrying with ${chunk}-byte chunks`); continue; }
+        throw e;
+      }
+      off += n; seq++;
+      if (seq % 8 === 0 && off < size) await expect('OK:ami-chunk', 6000);
+    }
+    await expect('OK:ami-saved', 10000);
+  }
+
+  $('syncZip').onclick = async () => {
+    const items = parsed.filter(p => p.valid);
+    if (!items.length) { log('Nothing valid to sync.', 'err'); return; }
+    log(`Syncing ${items.length} dump(s)…`);
+    for (const item of items) {
+      try { await uploadOne(item); }
+      catch (e) { log(`${item.name}: ${e.message}`, 'err'); }
+    }
+    await refreshLibrary();
+  };
+
+  $('refresh').onclick = () => refreshLibrary();
+  $('stopEmu').onclick = async () => {
+    try { await sendCmd('STOP'); await expect('OK:emulation-stopped', 3000); await refreshLibrary(); } catch (e) { log(e.message, 'err'); }
+  };
+
+  // ---------- note ----------
+  $('addForm').onsubmit = e => {
+    e.preventDefault();
+    const kind = $('kind').value;
+    const value = $('value').value.trim();
+    if (!value || new TextEncoder().encode(value).length > 200 || /[\r\n\0]/.test(value)) { log('Note invalid (empty, >200 bytes, or line breaks).', 'err'); return; }
+    if (kind === 'URL' && !/^https?:\/\//i.test(value)) { log('URL note must start with http:// or https://', 'err'); return; }
+    note = { kind, value };
+    $('value').value = '';
+    log(`Queued ${kind} note locally. Press "Send note now" to sync.`);
+    $('send').textContent = `Send note now (${kind})`;
+  };
+  $('send').onclick = async () => {
+    if (!tx || !note.value) return;
+    try {
+      await tx.writeValueWithResponse(new TextEncoder().encode(`${note.kind}:${note.value}`));
+      await expect('OK:queued', 4000);
+    } catch (e) { log(e.message, 'err'); }
+  };
+  $('clear').onclick = async () => {
+    // "Clear note" is a device-menu action; a cleared device note is restored
+    // by sending a new one. There is no separate BLE clear command.
+    log('Use the device menu (Clear note) or send a new note to replace it.');
+  };
+
+  // ---------- connect ----------
   $('connect').onclick = async () => {
-    if (!navigator.bluetooth) { $('response').textContent='Web Bluetooth is unavailable. Use Chrome/Edge on HTTPS or localhost.'; return; }
+    if (!navigator.bluetooth) { log('Web Bluetooth is unavailable. Use Chrome/Edge on HTTPS or localhost.', 'err'); return; }
     try {
       device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE] }], optionalServices: [SERVICE] });
-      device.addEventListener('gattserverdisconnected', () => { tx=null; status=null; $('disconnect').disabled=true; setState('Disconnected'); render(); });
+      device.addEventListener('gattserverdisconnected', () => {
+        tx = status = dataCh = null;
+        setConnectedButtons(false);
+        setState('Disconnected');
+        log('Disconnected.');
+      });
       server = await device.gatt.connect();
       const service = await server.getPrimaryService(SERVICE);
       tx = await service.getCharacteristic(WRITE);
       status = await service.getCharacteristic(STATUS);
+      dataCh = await service.getCharacteristic(DATA);
       await status.startNotifications();
-      status.addEventListener('characteristicvaluechanged', e => { $('response').textContent = new TextDecoder().decode(e.target.value); });
-      $('disconnect').disabled=false; setState(device.name || 'OpenTag connected','ok'); render();
-    } catch (e) { setState('Not connected','err'); $('response').textContent = e.message; }
+      status.addEventListener('characteristicvaluechanged', e => onNotify(new TextDecoder().decode(e.target.value)));
+      setConnectedButtons(true);
+      setState(device.name || 'OpenTag connected', 'ok');
+      log('Connected. Requesting library…');
+      await refreshLibrary();
+    } catch (e) { setState('Not connected', 'err'); log(e.message, 'err'); }
   };
-  $('disconnect').onclick = () => { if (device?.gatt?.connected) device.gatt.disconnect(); };
-  $('addForm').onsubmit = e => {
-    e.preventDefault();
-    try { const rec=validateRecords([{kind:$('kind').value,value:$('value').value}])[0]; library.push(rec); save(); $('value').value=''; }
-    catch (err) { $('response').textContent=err.message; }
-  };
-  $('export').onclick = () => {
-    const blob = new Blob([JSON.stringify(library,null,2)], {type:'application/json'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='opentag-notes.json'; a.click(); URL.revokeObjectURL(a.href);
-  };
-  $('importFile').onchange = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    try {
-      if (!file.name.toLowerCase().endsWith('.json') || file.size > 128000) throw new Error('Import a small JSON notes file only.');
-      const imported = validateRecords(JSON.parse(await file.text()));
-      library = [...library, ...imported].slice(0,250); save(); $('response').textContent=`Imported ${imported.length} NDEF note(s).`;
-    } catch (err) { $('response').textContent=`Import rejected: ${err.message}`; }
-    e.target.value='';
-  };
-  render();
+  $('disconnect').onclick = () => { if (device && device.gatt.connected) device.gatt.disconnect(); };
+
+  renderParsed();
+  renderDeviceLib();
+  setConnectedButtons(false);
+  log('Ready. Connect, then upload a .zip of your NTAG215 dumps.');
 })();
 </script></body></html>

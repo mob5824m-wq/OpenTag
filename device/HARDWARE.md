@@ -1,45 +1,74 @@
-# OpenTag device hardware baseline
+# OpenTag device hardware
 
-This is a **schematic-level prototype specification**, not a fabrication-ready PCB. It fixes the initial electrical interfaces for firmware development; verify the chosen module/display pinouts, RF layout, antenna tuning, thermal/power margins, and enclosure before ordering a board.
+A pocket handheld that writes and emulates NFC tags, built around three
+modules on one carrier PCB (no custom RF or power electronics):
 
-## Assumed parts
+- **ESP32-S3-DevKitC-1** — MCU + BLE + USB (flashing via its own USB port)
+- **PN532Killer** — NFC frontend: reader/writer *and* a real NTAG215 emulator
+  (7-byte UID, 8 slots) connected over UART
+- **SSD1351 1.3" OLED** on SPI
+- **LiPo power**: TP4056 charger + MT3608 boost to 5 V into the DevKit's 5V pin
 
-| Ref | Part / requirement | Notes |
+Fabrication assets:
+
+- `hardware/pcb/opentag-carrier.kicad_pcb` — 90 × 60 mm 2-layer carrier
+  (regenerate/verify with `python3 hardware/pcb/generate_carrier_pcb.py`)
+- `hardware/pcb/WIRING.md` — assembly, power chain, signal map, bring-up
+- `hardware/cad/opentag_shell.scad` — parametric 2-part handheld shell
+- `hardware/BOM.md` — parts list and budget
+
+## Why the PN532Killer (and not the PN532)
+
+Amiibo (and most signature-bound NTAG215 applications) bind their data to the
+tag's **7-byte UID**. A classic PN532 in target mode can only present a 4-byte
+UID hard-wired to start with `0x08`, and cannot emit Type-2 ACK/NAK frames —
+it physically cannot emulate these tags. The PN532Killer (ST25R3916-class,
+open firmware) presents the dump's own 7-byte UID and serves the full NTAG215
+command set from an on-board emulator slot, so the ESP32 only has to push a
+540-byte page image over UART and switch the board into emulator mode.
+
+## Interfaces
+
+| Function | Pins (DevKitC header pin / GPIO) |
+|---|---|
+| OLED SPI: SCK, MOSI | J1-18 / GPIO12, J1-17 / GPIO11 |
+| OLED CS, DC, RST | J1-16 / GPIO10, J1-15 / GPIO9, J1-12 / GPIO8 |
+| OLED MISO (unused, write-only bus) | J1-19 / GPIO13 — not connected |
+| NFC UART (Serial2, 115200 8N1) | TX J1-10 / GPIO17 → Killer RX; RX J1-11 / GPIO18 ← Killer TX |
+| Buttons (active-low) | UP J3-6 / GPIO42, DOWN J3-5 / GPIO2, OK J3-4 / GPIO1 |
+| Power in | 5 V via J1-21 (after Schottky from the boost), 3V3 out at J1-1/2 for OLED + Killer |
+
+Avoid on the S3: GPIO 0/3/45/46 (strapping), 19/20 (USB D−/D+), 26–32 (flash),
+35–37 (octal PSRAM), 43/44 (UART0). The pin choices above dodge all of them.
+
+## NFC notes
+
+- The Killer mounts in the shell's back bay behind a thinned (1.0 mm) tap
+  window; keep the battery and boost module on the opposite side of the bay
+  to reduce metal near the antenna.
+- Emulation presents the dump's own UID; the NDEF-note personality uses a
+  random persisted 7-byte UID (`04:…` NXP-style prefix).
+- No cryptographic keys are handled by this project: reading or writing
+  amiibo PWD/PACK is not implemented; dumps are user-supplied backups of tags
+  the user owns.
+
+## Power budget (approximate)
+
+| Rail | Consumers | Typical / peak |
 |---|---|---|
-| U1 | ESP32-S3-WROOM-1-N16R8 | 16 MB SPI flash, 8 MB PSRAM, BLE, native USB; use module variant with matching flash/PSRAM package. |
-| U2 | PN532 NFC frontend/module, 3.3 V SPI | Reader/writer for standard NFC Forum Type 2 NDEF tags. The prototype writes ordinary NDEF text/URI records only. It has no tag-emulation mode. |
-| J2 | 1.4-inch 128×128 OLED, SSD1351, 4-wire SPI | Confirm module pin order and voltage before layout. |
-| SW1–SW3 | Up, Down, OK tactile switches | Active-low, GPIO input with pull-ups. |
-| SW4 | Latching power switch | USB-C 5 V input is switched before the 3.3 V regulator. This is a true off switch, not a GPIO sleep button. |
-| J1 | USB-C receptacle | 5 V input and USB 2.0 data for native USB programming/serial. Add 5.1 kΩ Rd on CC1 and CC2 for a sink-only device. |
-| U3 | 3.3 V buck regulator, ≥1.5 A peak | Select a proven part and follow its reference layout. Size for ESP32-S3 BLE current peaks plus display and NFC frontend. |
-| D1 | USB ESD protection | Protect D+/D− and any exposed connector lines; add input transient protection as appropriate. |
-| J3 | Optional 4-pin debug/test header | 3V3, GND, UART TX/RX or JTAG, per final production/debug decision. |
+| 3V3 | OLED (~30 mA), Killer (~50–100 mA active field), DevKit internals | ~150 / 300 mA |
+| 5V (from boost) | DevKitC LDO input incl. ESP32-S3 BLE peaks | ~200 / 450 mA |
+| Battery (3.7 V) | via MT3608 (≈85% eff.) | ~250 / 550 mA |
 
-No battery was specified, so this baseline is USB-powered and has no Li-ion charging circuit. Add a battery/charger/power-path design only after selecting a cell and runtime target.
+An 805040 (~800 mAh) cell gives roughly 2–3 h of active emulation and days of
+standby-ish menu use. The TP4056 charges at up to 1 A over USB-C.
 
-## Pin assignment used by firmware
+## Bring-up order
 
-| Signal | ESP32-S3 GPIO |
-|---|---:|
-| SPI SCK / MISO / MOSI | 12 / 13 / 11 |
-| OLED CS / DC / RESET | 10 / 9 / 8 |
-| PN532 SPI CS | 14 |
-| Up / Down / OK | 4 / 5 / 6 |
-| USB D− / D+ | 19 / 20 (native USB; verify module/board routing) |
-
-OLED and PN532 share the SPI bus and use separate chip-select lines. Keep CS lines pulled high during reset. Use a 3.3 V compatible PN532 module and display; do not connect 5 V logic to ESP32-S3 GPIOs. Button inputs are active-low and pulled up in firmware.
-
-## PCB layout checklist
-
-1. Use the ESP32-S3 module manufacturer's reference layout, antenna keep-out, and USB routing guidance. Keep copper/metal away from the module antenna zone.
-2. Put the PN532 and its tuned 13.56 MHz antenna at the edge of the enclosure, away from the ESP32 antenna, switching regulator, display flex, and USB connector. A PN532 breakout with its own antenna simplifies the first carrier-board revision; retain the module's matching network unchanged.
-3. Keep the buck converter hot loop short, use the manufacturer's recommended inductor/capacitors, and provide a continuous ground reference.
-4. Route SPI as a short shared bus, with distinct CS lines and local decoupling at U1/U2/display.
-5. Put the NFC antenna under a marked tap area. Verify read/write range with the final enclosure and battery/metalwork before release.
-6. Add test pads for 5 V, 3V3, GND, SPI, and reset. Include USB ESD and CC resistors near J1.
-7. Validate the board with current measurement, USB attach/detach, BLE range, NFC interoperability, and repeated NDEF write/readback tests before calling it production-ready.
-
-## Scope boundary
-
-The firmware and board baseline intentionally provide standard NFC polling and ordinary NDEF writing. They do not implement NTAG215 tag emulation, raw memory-image import, proprietary tag formats, or cryptographic key handling. Writing a note replaces the tag's existing NDEF user area after the user confirms on-device; only a tag advertising the NTAG215-sized NDEF capability container is accepted.
+1. Bare board: continuity on GND/+5V/+3V3 rails, no shorts.
+2. Power chain staged per `WIRING.md` (set the boost to 5.05 V first).
+3. DevKit alone + firmware; OLED should show the menu.
+4. Plug the Killer in via the Dupont cable; menu no longer shows
+   "PN532Killer absent".
+5. BLE sync from `device/web-sync/`, write a note to a real NTAG215, then try
+   the amiibo library with a .zip of your own dumps.

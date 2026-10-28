@@ -1,0 +1,84 @@
+# OpenTag carrier PCB — wiring & assembly guide
+
+`opentag-carrier.kicad_pcb` (regenerate with `python3 generate_carrier_pcb.py`,
+which self-checks connectivity and clearance before writing the file) is a
+90 × 60 mm, 2-layer, all-through-hole board. View/order it in KiCad 6+; press
+**B** to fill the two GND zones before plotting Gerbers.
+
+## What lives on the board
+
+| Reference | Part | Notes |
+| --- | --- | --- |
+| J_DEVKIT | 2 × 1×22 female headers, 2.54 mm | ESP32-S3-DevKitC-1 socket (rows 22.86 mm apart, exact Espressif geometry) |
+| J_OLED | 1 × 1×7 female header | 1.3" SSD1351 OLED module (pin 1 = GND, square pad) |
+| J_KILLER | 1 × 1×4 male header | PN532Killer J4 via 4 F–F Dupont jumpers |
+| SW_BTN ×3 | 6 × 6 mm tactile switches | UP / DOWN / OK |
+| J_BAT | JST-PH-2 (2.0 mm) | LiPo cell input (**verify polarity!**) |
+| J_CHG | 1 × 1×4 male header | TP4056 module: B+ B− OUT+ OUT− |
+| J_BOOST | 1 × 1×4 male header | MT3608 module: IN+ IN− OUT− OUT+ |
+| SW_PWR | SPDT mini toggle (3 pads, 2.54 row) | MTS-102 style, ≥1 A |
+| D1 | 1N5819 (DO-41, 10.16 mm) | **banded (K) end toward the west pad**, marked in silk |
+| MH ×4 | Ø3.2 NPTH | M3 standoffs |
+
+## Orientation
+
+- **DevKitC pin 1** (3V3, marked on the DevKit silk) goes to the **square pad**
+  at the **north-west** corner of the socket. The DevKit's USB connectors end
+  up facing **west** (toward the board edge with the two GND/5V pins).
+- The OLED header's square pad (pin 1, GND) is on the west end.
+- Solder the DevKit female headers from the **top** side; the headers mount on
+  the bottom so the DevKit hangs under the carrier.
+
+## Power chain (verify each stage before connecting the next!)
+
+```
+LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charging, USB-C in)
+                    │
+        TP4056 OUT+ ─┴─ SW_PWR (pads 1→2) ── J_BOOST IN+
+        TP4056 OUT─ ─── GND ─────────────── J_BOOST IN─
+        MT3608 OUT+ ── D1 (anode→cathode) ── +5V rail ── DevKitC J1-21 (5V)
+        MT3608 OUT─ ─── GND ─────────────── DevKitC J1-22 / J3-1
+        DevKitC 3V3 (J1-1/2) ── OLED VCC + Killer VCC
+```
+
+1. Set the MT3608 potentiometer to **5.0–5.1 V before** connecting anything
+   downstream (measure at its OUT+/OUT− with the input powered from USB).
+2. Check the battery polarity at J_BAT before plugging the cell in — JST-PH
+   leads vary between vendors.
+3. The TP4056 and MT3608 modules connect with four wires each; their pads are
+   SMD edge pads on the modules (solder wires or pin headers to them).
+
+## Signals
+
+| Net | From | To | DevKit pin (GPIO) |
+| --- | --- | --- | --- |
+| ESP_TX | J1-10 (GPIO17, U1TXD) | J_KILLER pin 3 (**TX**) → Killer J4 **RX** (pin 9) | 10 / 17 |
+| ESP_RX | J1-11 (GPIO18, U1RXD) | J_KILLER pin 4 (**RX**) → Killer J4 **TX** (pin 8) | 11 / 18 |
+| BTN_UP | J3-6 (GPIO42) | UP button | 6 / 42 |
+| BTN_DOWN | J3-5 (GPIO2) | DOWN button | 5 / 2 |
+| BTN_OK | J3-4 (GPIO1) | OK button | 4 / 1 |
+| OLED_SCK | J1-18 (GPIO12) | OLED SCL | 18 / 12 |
+| OLED_MOSI | J1-17 (GPIO11) | OLED SDA | 17 / 11 |
+| OLED_RST | J1-12 (GPIO8) | OLED RES | 12 / 8 |
+| OLED_DC | J1-15 (GPIO9) | OLED DC | 15 / 9 |
+| OLED_CS | J1-16 (GPIO10) | OLED CS | 16 / 10 |
+| +3V3 | J1-1/2 | OLED VCC, Killer 3V3 | — |
+| +5V | J1-21 (via D1) | DevKit 5V pin | — |
+
+- Button pins: both pads on each side of every switch are paralleled on the
+  PCB, so any 6 × 6 mm tactile with the standard 6.5 × 4.5 mm pin pattern
+  works regardless of internal pin pairing.
+- J1-19 (GPIO13/MISO) is intentionally left unconnected — the OLED bus is
+  write-only.
+- The PN532Killer runs on 3.3 V only. Its J4 header: pin 9 = RX, pin 8 = TX
+  (3.3 V TTL), plus GND and VCC — **verify against your board's silkscreen.**
+
+## Bring-up checklist
+
+1. Continuity-check GND between DevKit socket, OLED, Killer and power headers.
+2. With SW_PWR off, plug the DevKit in and confirm 5 V at J1-21 only when the
+   boost output is enabled and D1 is installed.
+3. Flash firmware over the DevKit's USB; set the MT3608 to 5.05 V; then power
+   from the battery.
+4. On boot the OLED shows OPENTAG; the menu reports the PN532Killer state
+   (`PN532Killer absent` if UART probing failed — check TX/RX swap first).

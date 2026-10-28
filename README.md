@@ -1,27 +1,93 @@
 # OpenTag
 
-OpenTag is an independent, open-source NFC device project. The `device/` directory contains a standalone ESP32-S3 firmware prototype targeting 16 MB flash, BLE, a 1.4-inch SSD1351 OLED, Up/Down/OK buttons, a physical power switch, USB-C, and a PN532 NFC frontend.
+OpenTag is an independent, open-source NFC handheld. `device/` contains the
+ESP32-S3 firmware; `hardware/` contains the carrier PCB, enclosure CAD, wiring
+guide, and parts list.
 
-> OpenTag is not affiliated with or endorsed by Nintendo, Galmiibo, or any tag/device manufacturer. The linked Drive folder's directory names can be used as catalog labels, but its 540-byte `.bin` tag images are not imported, parsed, written, or emulated by this project.
+> OpenTag is not affiliated with or endorsed by Nintendo or any tag/device
+> manufacturer. Amiibo is a trademark of Nintendo. **All amiibo tag data is
+> user-supplied** — the project bundles, generates, and distributes none of
+> it. Upload backups of tags you own, and only write to tags you are
+> authorized to program.
 
-## Device firmware
+## What it does
 
-The device prototype supports standard NDEF text and HTTP(S) URL records on NTAG215-sized tags. The user confirms each write on-device, and the firmware reads back written pages to verify the result. The PN532 is used in reader/writer mode only; tag emulation, raw tag-image import, proprietary tag data, and cryptographic key handling are not implemented.
+- **Write NDEF notes** — sync a text or HTTP(S) URL note over BLE and write it
+  to a real NTAG215 (verified by read-back), from the device menu.
+- **Emulate the NDEF note** — present the note as a virtual, read-only
+  NTAG215; phones read it like any NDEF tag.
+- **Amiibo library** — upload a `.zip` of your own NTAG215 `.bin` dumps
+  through the web page (unpacked and validated in the browser), browse them
+  on the OLED, and tap a console with the dump's own 7-byte UID presented by
+  the NFC emulator.
+- **BLE sync** — Web Bluetooth page with note management, .zip upload, device
+  library listing, remote emulate/delete.
 
-### Build and flash
+## Hardware architecture
 
-Requirements: PlatformIO Core, the Espressif32 PlatformIO platform, and an ESP32-S3 development board/module with 16 MB flash. The prototype pin assignment and parts baseline are in [`device/HARDWARE.md`](device/HARDWARE.md).
+ESP32-S3-DevKitC-1 + **PN532Killer** (ST25R3916-class NFC emulator; the
+classic PN532 cannot present the 7-byte, signature-bound UIDs amiibo relies
+on) + SSD1351 OLED + three buttons + LiPo power (TP4056 + MT3608). The NFC
+board talks HSU UART to the ESP32; a 540-byte page image per tag is all the
+firmware pushes. See [`device/HARDWARE.md`](device/HARDWARE.md) for the full
+interface map and [`hardware/`](hardware/) for:
+
+| File | Contents |
+|---|---|
+| `hardware/pcb/opentag-carrier.kicad_pcb` | 90 × 60 mm 2-layer carrier, all through-hole |
+| `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
+| `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
+| `hardware/cad/opentag_shell.scad` | Parametric 2-part handheld shell + button caps |
+| `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
+
+## Build and flash
+
+Requirements: PlatformIO Core + an ESP32-S3-DevKitC-1 with 16 MB flash.
 
 ```sh
 cd device
-pio run -e opentag_s3
+pio run -e opentag_s3            # firmware
 pio run -e opentag_s3 -t upload
+pio run -e opentag_s3 -t uploadfs # LittleFS image (amiibo library storage)
 ```
 
-Open `device/web-sync/index.html` from a secure origin (HTTPS or localhost) in a Web Bluetooth-capable browser such as Chrome or Edge. Pair with **OpenTag**, add or import a JSON notes library, and send a text or URL note. `.bin` files are deliberately rejected. The firmware persists the currently queued note in NVS; the browser keeps the notes library in local storage and can export/import the supported JSON format.
+Unit tests (host-native, no hardware needed):
 
-> `device/HARDWARE.md` is a design baseline, **not a tested, fabrication-ready KiCad project**. Confirm the exact display and NFC module, electrical details, RF matching, enclosure, and PCB layout before manufacturing.
+```sh
+cd device/test
+g++ -std=c++11 -Wall -Wextra -pedantic -I ../src test_ntag215_emu.cpp -o t1 && ./t1
+g++ -std=c++11 -Wall -Wextra -pedantic -I host_stubs -I ../src test_pn532_uart.cpp -o t2 && ./t2
+```
+
+## Web sync
+
+Open `device/web-sync/index.html` from a secure origin (HTTPS or localhost)
+in Chrome/Edge, connect over BLE, then:
+
+- queue a text/URL note and send it;
+- choose a `.zip` (or loose `.bin` files) of your NTAG215 dumps — the page
+  unzips locally with the browser's native `DecompressionStream`, validates
+  each dump (size 532–572 B, UID BCC, NTAG215 capability container), and
+  copies them to the device in 240-byte BLE chunks;
+- list, emulate, or delete library entries on the device.
+
+Nothing is uploaded to any server; all processing happens in your browser.
+
+## Device menu
+
+`Write NDEF note` → `Emulate NDEF note` → `Amiibo library` → `BLE sync` →
+`Clear note`, driven by UP/DOWN/OK. Emulation runs on the PN532Killer's slot
+0 and stops on any button press or a BLE `STOP`.
+
+## Scope notes
+
+- No cryptographic key handling anywhere in the project (not needed for
+  emulation of user-owned dumps).
+- The NDEF-note emulation personality uses a random, persisted 7-byte UID.
+- `device/HARDWARE.md` documents the interface baseline; the PCB is
+  self-checked by its generator but has not been manufactured in this repo —
+  review it in KiCad before ordering.
 
 ## License
 
-MIT License; see [`LICENSE`](LICENSE). Contributions are welcome within the NDEF-only, non-emulation scope.
+MIT License; see [`LICENSE`](LICENSE).
