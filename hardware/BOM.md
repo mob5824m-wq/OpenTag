@@ -30,6 +30,11 @@
 
 ## Printed parts (`hardware/cad/opentag_shell.cad`)
 
+Print-ready STLs are in `hardware/cad/stl/` (front shell, back plate, button
+cap — print 3 caps). Regenerate them with OpenSCAD
+(`openscad -o front.stl -D 'part="front"' opentag_shell.cad`, etc.) or with
+`python3 tools/cad_to_stl.py`, which also self-checks the mesh.
+
 | # | Part | Qty | Material |
 |---|------|----|----------|
 | 19 | Front shell | 1 | PLA/PETG — **not** carbon- or metal-filled near the tap zone |

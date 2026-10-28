@@ -59,6 +59,8 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
 | `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps (OpenSCAD source; `.cad` is the project's extension) |
+| `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 3 caps) |
+| `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
 | `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
 
 ## Updating the firmware (keeps your amiibos)

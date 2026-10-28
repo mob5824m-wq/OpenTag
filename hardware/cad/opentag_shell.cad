@@ -61,22 +61,31 @@ sw_slot_l  = 10;  sw_slot_z0 = 16; sw_slot_z1 = 25;
 
 // ---- south bay (nothing above it) -------------------------------------------------
 bay_y0 = pcb_y + pcb_l/2 + 2;    // = 7
-// PN532Killer bay — MEASURE YOUR BOARD (default ~42 x 32)
+// PN532Killer bay — MEASURE YOUR BOARD (default ~42 x 32). The posts are
+// centred on the bay corners, so the board either rests on the post tops
+// or you size kil_l/kil_w to board + ~5 mm to drop it between them.
 kil_l = 42; kil_w = 32; kil_t = 2.6;
-kil_cx = -24; kil_cy = bay_y0 + 19;         // bay centre
+kil_cx = -21.5; kil_cy = bay_y0 + 19;      // west post edge -46.6, clear of the front wall (-47)
 tap_win = 30; tap_t = 1.0;                  // thinned window for NFC
 kil_post = 5; kil_lip = 1.6; kil_post_h = kil_t + 2.2;
-// battery bay (default 805040: 50 long x 40 wide x 8 thick, lying flat)
-bat_l = 52; bat_w = 42; bat_t = 9;
-bat_cx = 22; bat_cy = bay_y0 + 34;   // keeps heel inside the interior
+// battery bay (default 805040: 50 long x 40 wide x 8 thick, lying flat).
+// bat_w is the cell width + 0.6 clearance — bay + battery + retainer must
+// fit the 94 mm interior side by side.
+bat_l = 52; bat_w = 40.6; bat_t = 9;
+bat_cx = 23; bat_cy = bay_y0 + 30;  // west edge 2.7 clears the bay posts, heel clears the NE boss
 // power module tray (TP4056 ~26x17, MT3608 ~21x14, side by side)
-tray_cx = -23; tray_cy = bay_y0 + 51; tray_w = 47; tray_d = 18;
+tray_cx = -23; tray_cy = bay_y0 + 45.5; tray_w = 47; tray_d = 18;
 
 // ---- derived ----------------------------------------------------------------------
 outer_w = inner_w + 2*wall;
 outer_l = inner_l + 2*wall;
 outer_d = inner_d + wall;
 oled_top = standoff_h + pcb_t + oled_mod_h;
+// screw line: front-shell bosses and back-plate countersinks share these.
+// screw_dy keeps 0.38 mm clearance to the PCB standoffs (41.5, -55.5/-4.5,
+// r 3.75); screw_dx keeps the countersink inside the plate's rounded corner.
+screw_dx = outer_w/2 - 6;    // 43.4
+screw_dy = outer_l/2 - 5.4;  // 63.4
 
 module rbox(w, l, h, r) {           // rounded box, centred x/y, base z=0
   hull() for (x = [-1, 1], y = [-1, 1])
@@ -103,16 +112,19 @@ module front_shell() {
     translate([inner_w/2 - 0.01, sw_slot_y - sw_slot_l/2, sw_slot_z0])
       cube([wall + 0.02, sw_slot_l, sw_slot_z1 - sw_slot_z0]);
   }
-  // OLED side rails: clamp the module against the carrier socket
+  // OLED side rails: clamp the module against the carrier socket. The
+  // +0.02 fuses the rail tops into the face — an exact-height rail ends
+  // 0.01 mm short of the ceiling (the cavity cut overshoots) and the
+  // rails would print as loose pieces.
   for (sx = [-1, 1])
     translate([oled_cx + sx*(37.5/2 + 0.8) - 0.8, oled_cy - 34.5/2, oled_top])
-      cube([1.6, 34.5, inner_d - oled_top]);
+      cube([1.6, 34.5, inner_d - oled_top + 0.02]);
   // screw bosses (M3 from the back plate)
   for (x = [-1, 1], y = [-1, 1])
-    translate([x*(outer_w/2 - 6), y*(outer_l/2 - 6), 0])
+    translate([x*screw_dx, y*screw_dy, 0])
       difference() {
         cylinder(d = 8, h = 10);
-        cylinder(d = 2.8, h = 12);
+        cylinder(d = 2.8, h = 10);
       }
 }
 
@@ -123,11 +135,19 @@ module back_plate() {
   difference() {
     union() {
       translate([0, 0, -floor_t]) rbox(outer_w, outer_l, floor_t, corner);
-      // mating lip
-      difference() {
-        translate([0, 0, -0.01]) rbox(inner_w + 2*1.2, inner_l + 2*1.2, 1.8, max(corner - 3, 1));
-        translate([0, 0, -0.1]) rbox(inner_w - 0.4, inner_l - 0.4, 2.2, max(corner - 4, 1));
-      }
+      // Mating lip: four segments that slide into the front-shell cavity
+      // with 0.2 mm clearance per side. A full perimeter ring does NOT
+      // fit: the ring would have to be under inner_w x inner_l to enter
+      // the cavity, and at any width it crosses the killer-bay posts,
+      // the battery retainers and the screw bosses. Segment windows:
+      // west clears the killer posts (y 1..7.5 and 34.5..39.5), east
+      // clears the battery retainer (y 6..58) and the corner bosses,
+      // north/south stop short of the bosses (x +/- 39.4).
+      for (sy = [-1, 1])
+        translate([-(inner_w/2 - 9), sy*(inner_l/2 - 0.2) - (sy < 0 ? 0 : 1.2), -0.01])
+          cube([inner_w - 18, 1.2, 1.8]);
+      translate([inner_w/2 - 1.4, -57, -0.01]) cube([1.2, 61, 1.8]);   // east: y -57..4
+      translate([-inner_w/2 + 0.2, 10, -0.01]) cube([1.2, 23, 1.8]);    // west: y 10..33
       // PCB standoffs (M3, screws from the top through the PCB)
       for (x = [-1, 1], y = [-1, 1])
         translate([x*pcb_hole_dx, pcb_y + y*pcb_hole_dy, 0])
@@ -149,8 +169,11 @@ module back_plate() {
                    bat_cy - bat_l/2, 0]) cube([3, bat_l, 7]);
       translate([bat_cx - bat_w/2 - 3, bat_cy - bat_l/2 - 3, 0])
         cube([bat_w + 6, 3, 5]);
+      // Heel stops ~1.5 mm short of the battery's east edge so it clears
+      // the NE screw boss; the east side lip retains that corner of the
+      // battery instead.
       translate([bat_cx - bat_w/2 - 3, bat_cy + bat_l/2, 0])
-        cube([bat_w + 6, 3, 5]);
+        cube([bat_w - 1, 3, 5]);
       // power module tray with zip-tie slots
       translate([tray_cx - tray_w/2, tray_cy - tray_d/2, 0]) {
         for (mx = [0, 1]) translate([mx*(tray_w - 2), 0, 0]) cube([2, tray_d, 5]);
@@ -164,7 +187,7 @@ module back_plate() {
       cube([tap_win, tap_win, floor_t - tap_t + 0.01]);
     // M3 screw holes, countersunk from the outside
     for (x = [-1, 1], y = [-1, 1])
-      translate([x*(outer_w/2 - 6), y*(outer_l/2 - 6), 0]) {
+      translate([x*screw_dx, y*screw_dy, 0]) {
         translate([0, 0, -floor_t - 0.01]) cylinder(d = 3.2, h = floor_t + 0.02);
         translate([0, 0, -floor_t - 0.01]) cylinder(d1 = 6.4, d2 = 3.2, h = 1.6);
       }

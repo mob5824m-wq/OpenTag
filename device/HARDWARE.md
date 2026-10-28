@@ -15,6 +15,8 @@ Fabrication assets:
   (regenerate/verify with `python3 hardware/pcb/generate_carrier_pcb.py`)
 - `hardware/pcb/WIRING.md` — assembly, power chain, signal map, bring-up
 - `hardware/cad/opentag_shell.cad` — parametric 2-part handheld shell
+  (print-ready STLs in `hardware/cad/stl/`; regenerate with OpenSCAD or
+  `python3 tools/cad_to_stl.py`)
 - `hardware/BOM.md` — parts list and budget
 
 ## Why the PN532Killer (and not the PN532)
