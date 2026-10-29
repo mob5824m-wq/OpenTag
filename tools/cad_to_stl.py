@@ -248,10 +248,16 @@ def front_shell(p):
                                   p["sw_slot_z0"], p["sw_slot_z1"], west=False)
     chg_thru, chg_plug = wall_slot(p["chg_slot_y"], p["chg_slot_l"],
                                     p["chg_slot_z0"], p["chg_slot_z1"], west=True)
+    # lanyard tab: bored through, fuses with the outer box (x overlap
+    # -outer_w/2 .. lug_cx + lug_w/2)
+    lug = difference([T(rbox(p["lug_w"], p["lug_l"], p["outer_d"], p["lug_r"]),
+                        [p["lug_cx"], p["lug_cy"], 0]),
+                      T(cyl(p["lug_hole"], p["outer_d"] + 0.02),
+                        [p["lug_cx"], p["lug_cy"], -0.01])])
     shell = union([difference([outer, inner, oled] + btns
                               + [usb_thru, sw_thru, chg_thru]
                               + brand_boxes(p) + bolt_boxes(p)),
-                   usb_plug, sw_plug, chg_plug])
+                   usb_plug, sw_plug, chg_plug, lug])
     # OLED side rails (fused +0.02 into the face, see .cad)
     rails = [T(cube(1.6, 34.5, p["inner_d"] - p["oled_top"] + 0.02),
                [p["oled_cx"] + sx * (37.5 / 2 + 0.8) - 0.8,
@@ -329,9 +335,16 @@ def back_plate(p):
              for my in (0, 1)]
     tray += [T(cube(p["tray_w"] - 14, 2.6, 2.02), [tx + 7, ty + yy, -0.01])
              for yy in (3.5, p["tray_d"] - 6)]
-    body = union([plate] + lips + standoffs + btn_posts + kil_posts + nubs +
-                 bat_sides + [toe, heel] + tray)
+    # lanyard tab: same footprint as the front shell's, flush at z = 0 so
+    # the bore lines up through the seam
+    lug = T(rbox(p["lug_w"], p["lug_l"], p["floor_t"], p["lug_r"]),
+            [p["lug_cx"], p["lug_cy"], -p["floor_t"]])
+    body = union([plate, lug] + lips + standoffs + btn_posts + kil_posts +
+                 nubs + bat_sides + [toe, heel] + tray)
     cuts = []
+    # lanyard bore (overshoots up into the front tab's bore region only)
+    cuts.append(T(cyl(p["lug_hole"], p["floor_t"] + 0.02),
+                  [p["lug_cx"], p["lug_cy"], -p["floor_t"] - 0.01]))
     # NFC tap window: fully OPEN over the antenna — best read range.
     # Through-cut from below, overshooting past the outer face.
     cuts.append(T(cyl(p["tap_win"], p["floor_t"] + 0.02),
@@ -439,11 +452,13 @@ def check(mesh, name, bbox, vol_exp, tol, bodies=1):
 def verify(p, front, back, cap):
     ok = True
     print("geometry checks:")
+    # the lanyard lug extends the west outline past the outer box
+    bbox_w = p["outer_w"] / 2 + (-p["lug_cx"] + p["lug_w"] / 2)
     ok &= check(front, "front shell",
-                [p["outer_w"], p["outer_l"], p["outer_d"]], 44325.6, 0.02)
+                [bbox_w, p["outer_l"], p["outer_d"]], 46206.9, 0.02)
     ok &= check(back, "back plate",
-                [p["outer_w"], p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                27310.2, 0.02)
+                [bbox_w, p["outer_l"], p["standoff_h"] + p["floor_t"]],
+                27425.8, 0.02)
     # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
     # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
     cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
@@ -489,6 +504,8 @@ def verify(p, front, back, cap):
            "switch slot: east wall pierced, west solid (2 hits)")
     expect(len(ray_hits(front, [-60, p["chg_slot_y"], 3], [1, 0, 0])) == 2,
            "charge slot: west wall should be pierced, east solid (2 hits)")
+    expect(ray_hits(front, [p["lug_cx"], p["lug_cy"], 40], [0, 0, -1]) == [],
+           "lanyard bore not open through the front tab")
     expect(len(ray_hits(front, [60, 0, 20], [-1, 0, 0])) == 4,
            "away from switch slot both walls solid (4 hits)")
     for x in (-1, 1):
@@ -561,6 +578,8 @@ def verify(p, front, back, cap):
         ([-48, p["chg_slot_y"], 3], "void"),        # charge port channel
         ([-48.5, bol_y, bol_z], "void"),            # bolt pixel engraving
         ([-48.5, bol_y, 5.5], "solid"),             # wall below the bolt
+        ([p["lug_cx"], p["lug_cy"], 15], "void"),   # lanyard bore (front)
+        ([p["lug_cx"], p["lug_cy"] + 3.5, 15], "solid"),  # tab material
     ])
     probe(back, [
         ([p["kil_cx"], p["kil_cy"], -0.5], "void"),   # tap window open
@@ -568,6 +587,8 @@ def verify(p, front, back, cap):
         ([p["kil_cx"] + 17, p["kil_cy"], -0.3], "solid"),  # cradle annulus floor
         ([-45.5, p["chg_slot_y"], 2.5], "void"),    # tray wall notch (port)
         ([-45.5, p["chg_slot_y"] + 7.5, 2.5], "solid"),   # wall stub beside
+        ([p["lug_cx"], p["lug_cy"], -0.9], "void"),      # lanyard bore (back)
+        ([p["lug_cx"], p["lug_cy"] + 3.5, -0.9], "solid"),  # tab material
         ([p["kil_cx"] + 17, p["kil_cy"], -1.0], "void"),   # cradle recess
         ([p["kil_cx"], p["kil_cy"] + 16.8, 1.2], "solid"), # north anti-slide nub
         ([p["kil_cx"] + 21.8, p["kil_cy"], 1.2], "solid"), # east anti-slide nub
@@ -636,7 +657,8 @@ def main():
             "brand_px", "brand_depth", "brand_cx", "brand_cy",
             "halo_d", "halo_w", "halo_t",
             "chg_slot_y", "chg_slot_l", "chg_slot_z0", "chg_slot_z1",
-            "bolt_px", "bolt_depth", "bolt_cy", "bolt_z0")
+            "bolt_px", "bolt_depth", "bolt_cy", "bolt_z0",
+            "lug_cx", "lug_cy", "lug_w", "lug_l", "lug_r", "lug_hole")
     missing = [k for k in need if k not in p]
     if missing:
         sys.exit(f"parameters not parsed from {CAD}: {missing}")

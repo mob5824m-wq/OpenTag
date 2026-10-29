@@ -127,7 +127,8 @@ classic PN532 cannot present the 7-byte, signature-bound UIDs amiibo relies
 on) + SSD1351 OLED + four buttons (UP / DOWN / OK / BACK) + LiPo power
 (TP4056 + MT3608). The NFC
 board talks HSU UART to the ESP32; a 540-byte page image per tag is all the
-firmware pushes. See [`device/HARDWARE.md`](device/HARDWARE.md) for the full
+firmware pushes. The SW-corner tab is a lanyard / keyring loop (4.2 mm bore,
+continuous through the front/back seam). See [`device/HARDWARE.md`](device/HARDWARE.md) for the full
 interface map and [`hardware/`](hardware/) for:
 
 | File | Contents |
@@ -136,7 +137,7 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/gerbers/` | Fab-ready Gerber set + Excellon drill + `opentag-gerbers.zip` — the generator writes them and re-parses them to verify against the model |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
-| `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps, with the ⚡-marked USB-C charge port on the west wall (OpenSCAD source; `.cad` is the project's extension) |
+| `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps, with the ⚡-marked USB-C charge port on the west wall and a lanyard loop tab on the SW corner (OpenSCAD source; `.cad` is the project's extension) |
 | `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |
 | `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
 | `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
@@ -280,7 +281,16 @@ appears (BACK cancels within ~0.7 s), then the OLED parks and the ESP32-S3
 drops into deep sleep; holding OK for a full second wakes it back to the
 menu. That's a convenience off, not a battery disconnect — the DevKitC's
 regulator and the boost still draw a few mA asleep, so use the slide switch
-for storage. Preview the whole interface (buttons, long-press, every screen,
+for storage. **Auto-sleep:** after 3 minutes with no button, BLE or tag
+activity the device powers off through the same flow (BACK still cancels
+inside the window); mid-transfer BLE traffic resets the timer.
+
+**Random-UID re-sign (per amiibo):** hold DOWN on a library entry to flag it
+(an `R` badge appears). Every emulation or hot-swap of a flagged entry then
+re-signs the dump for a fresh random UID with the on-device amiitool crypto,
+so consoles treat it as a brand-new figure each time — needs your key files
+loaded (`Random needs keys` says so otherwise), v2 dumps only, and the flag
+persists as a zero-byte `.rnd` sidecar next to the dump. Preview the whole interface (buttons, long-press, every screen,
 power off/on) in your
 browser with [`device/web-preview/index.html`](device/web-preview/index.html).
 

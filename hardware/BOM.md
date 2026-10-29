@@ -48,7 +48,9 @@ engraved halo ring around the NFC cradle marking the tap zone — both
 The west wall carries the **charging port**: a slot over the tray's west
 end (the tray wall is notched behind it) so the TP4056's USB-C jack and
 charge LEDs are reachable with the case closed, marked by an engraved
-lightning bolt above the slot — charge the device on that side.
+lightning bolt above the slot — charge the device on that side. The
+south-west corner carries a **lanyard / keyring loop**: a tab shared by both
+halves with a continuous 4.2 mm bore through the seam.
 Cutouts are placed so nothing needs
 supports: both halves print as drawn (front face-down, plate flat-side-down).
 

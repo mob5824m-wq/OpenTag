@@ -106,6 +106,10 @@ chg_slot_l = 12; chg_slot_z0 = 0.5; chg_slot_z1 = 4.5;
 bolt_px = 1.0; bolt_depth = 0.6; // engraved lightning bolt, 6 x 8 px
 bolt_cy = chg_slot_y; bolt_z0 = 6;
 bolt_cols = [0, 136, 76, 110, 59, 25];  // column bytes, bit 0 = top row
+// lanyard / keyring loop: a corner tab shared by BOTH halves so the 4.2 mm
+// bore is continuous through the seam. SW corner (same side as the charge
+// port, clear of it and of the bolt), outboard of the screw boss.
+lug_cx = -51.5; lug_cy = 60; lug_w = 9; lug_l = 11; lug_r = 3; lug_hole = 4.2;
 
 // ---- back-plate cutouts / supports ------------------------------------------------
 svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
@@ -254,6 +258,11 @@ module front_shell() {
         cylinder(d = 7, h = 10);
         cylinder(d = 2.8, h = 10);
       }
+  // lanyard tab, bored through (the back plate carries the matching tab)
+  difference() {
+    translate([lug_cx, lug_cy, 0]) rbox(lug_w, lug_l, outer_d, lug_r);
+    translate([lug_cx, lug_cy, -0.01]) cylinder(d = lug_hole, h = outer_d + 0.02);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +272,9 @@ module back_plate() {
   difference() {
     union() {
       translate([0, 0, -floor_t]) rbox(outer_w, outer_l, floor_t, corner);
+      // lanyard tab: same footprint as the front shell's, flush at z = 0 so
+      // the bore lines up through the seam
+      translate([lug_cx, lug_cy, -floor_t]) rbox(lug_w, lug_l, floor_t, lug_r);
       // Mating lip: four segments that slide into the front-shell cavity
       // with 0.2 mm clearance per side. A full perimeter ring does NOT
       // fit: the ring would have to be under inner_w x inner_l to enter
@@ -330,6 +342,10 @@ module back_plate() {
           translate([7, yy, -0.01]) cube([tray_w - 14, 2.6, 2.02]);
       }
     }
+    // lanyard bore, through the tab only (overshoots into the front tab's
+    // own bore region, never into solid material)
+    translate([lug_cx, lug_cy, -floor_t - 0.01])
+      cylinder(d = lug_hole, h = floor_t + 0.02);
     // NFC tap window: fully OPEN over the antenna — best read range.
     translate([kil_cx, kil_cy, -floor_t - 0.01])
       cylinder(d = tap_win, h = floor_t + 0.02);

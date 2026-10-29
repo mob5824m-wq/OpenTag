@@ -152,12 +152,18 @@
   // v3 (Air Riders generation) dumps are 1024-byte page images; the library
   // flags them so the UI can badge them and refuse physical writes.
   let amiV3 = [false, false, false, true, false];
+  // per-entry "randomize UID" flag (firmware persists it as a .rnd sidecar)
+  let amiRnd = [false, false, false, false, false];
   let amiCount = 5, amiSelected = 0, amiTop = 0;
   let emuV3 = false;
   let emuSlot = 0;   // live Killer emulator slot (0-7, rotates on hot-swap)
   let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
   let poweredOff = false, powerOffTimer = null;
+  // auto-sleep: 3 minutes with no interaction (any draw = activity, which
+  // mirrors the firmware's button/BLE/tag activity resets)
+  const AUTO_SLEEP_MS = 3 * 60 * 1000;
+  let lastActivity = Date.now();
   const statusline = document.getElementById('statusline');
   const offNote = document.getElementById('offNote');
   const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF'];
@@ -180,6 +186,7 @@
     drawFastHLine(8, 21, 112, rgb565(0x4208));
   }
   function drawScreen() {
+    lastActivity = Date.now();   // any interaction draws -> not idle
     fillScreen(C.BG); setTextWrap(false); setTextSize(1); drawHeader();
     if (uiState === UI.WAIT_TAG) {
       setTextColor(C.WHITE); setCursor(8, 37); print('Ready to write');
@@ -210,6 +217,7 @@
           setCursor(8, y); print(idx === amiSelected ? '> ' : '  ');
           print(formatName(amiiboNames[idx]).substring(0, amiV3[idx] ? 13 : 16));
           if (amiV3[idx]) print(' V3');
+          if (amiRnd[idx]) print(' R');
         }
         setTextColor(C.MUTED); setCursor(8, 101);
         if (uiMessage.length) { setTextColor(C.LAVENDER); print(uiMessage.substring(0, 19)); }
@@ -282,6 +290,12 @@
       // BACK is the library's way out (a populated library had none before).
       if (state === 'back') { uiState = UI.MENU; uiMessage = ''; }
       if (state === 'up' && amiCount) amiSelected = (amiSelected + amiCount - 1) % amiCount;
+      if (state === 'down-hold') {   // toggle UID randomization (v2 only)
+        if (amiCount === 0) { uiState = UI.MENU; }
+        else if (amiV3[amiSelected]) { uiMessage = 'V3: emulation only'; }
+        else { amiRnd[amiSelected] = !amiRnd[amiSelected];
+               uiMessage = amiRnd[amiSelected] ? 'Random UID on' : 'Random UID off'; }
+      }
       if (state === 'down' && amiCount) amiSelected = (amiSelected + 1) % amiCount;
       if (state === 'ok-hold') {
         if (amiCount === 0) { uiState = UI.MENU; }
@@ -292,7 +306,12 @@
       } else if (state === 'ok') {
         if (amiCount === 0) { uiState = UI.MENU; }
         else if (!nfcReady) { uiMessage = 'PN532Killer absent'; }
-        else startEmulation(amiiboNames[amiSelected], 2, amiV3[amiSelected]);
+        else {
+          // random-UID re-sign mirror: keys loaded -> fresh UID, else notice
+          if (!amiV3[amiSelected] && amiRnd[amiSelected])
+            uiMessage = keysReady ? 'UID randomized' : 'Random needs keys';
+          startEmulation(amiiboNames[amiSelected], 2, amiV3[amiSelected]);
+        }
       }
     } else if (uiState === UI.WRITE_TAG) {
       uiState = UI.MENU; writeArmed = false; uiMessage = 'Write cancelled';
@@ -305,8 +324,10 @@
       if (emuMode === 2 && amiCount > 1 && (state === 'up' || state === 'down')) {
         amiSelected = state === 'up' ? (amiSelected + amiCount - 1) % amiCount
                                      : (amiSelected + 1) % amiCount;
-        emuHotSwap(amiiboNames[amiSelected], amiV3[amiSelected]);
         uiMessage = '';
+        if (!amiV3[amiSelected] && amiRnd[amiSelected])
+          uiMessage = keysReady ? 'UID randomized' : 'Random needs keys';
+        emuHotSwap(amiiboNames[amiSelected], amiV3[amiSelected]);
       } else if (state === 'ok' || state === 'back' ||
                  (emuMode !== 2 && (state === 'up' || state === 'down'))) {
         emuMode = 0; emuName = ''; emuV3 = false; emuSlot = 0;
@@ -391,7 +412,8 @@
   function bindButton(el, kind) {
     let timer = null, longFired = false, isDown = false;
     const down = e => { e.preventDefault(); isDown = true; el.classList.add('down'); longFired = false;
-      timer = setTimeout(() => { longFired = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000); };
+      timer = setTimeout(() => { longFired = true;
+        pressed((kind === 'ok' || kind === 'down') ? kind + '-hold' : kind); }, 1000); };
     const up = e => { e.preventDefault(); if (!isDown) return; isDown = false; el.classList.remove('down');
       if (timer) { clearTimeout(timer); timer = null; }
       if (!longFired) pressed(kind); };
@@ -415,7 +437,8 @@
     const kind = keymap[e.key]; if (!kind || e.repeat) return;
     e.preventDefault(); keyLong = false;
     btnEls[kind].classList.add('down');
-    keyTimer = setTimeout(() => { keyLong = true; pressed(kind === 'ok' ? 'ok-hold' : kind); }, 1000);
+    keyTimer = setTimeout(() => { keyLong = true;
+      pressed((kind === 'ok' || kind === 'down') ? kind + '-hold' : kind); }, 1000);
   });
   document.addEventListener('keyup', e => {
     const kind = keymap[e.key]; if (!kind) return;
@@ -475,7 +498,14 @@
   };
 
   // lock-confirm auto-skip after 15 s
-  setInterval(() => { if (uiState === UI.LOCK_CONFIRM && Date.now() - lockAskedAt > 15000) { uiState = UI.MENU; uiMessage = 'Left unlocked'; drawScreen(); } }, 500);
+  setInterval(() => {
+    if (uiState === UI.LOCK_CONFIRM && Date.now() - lockAskedAt > 15000) {
+      uiState = UI.MENU; uiMessage = 'Left unlocked'; drawScreen();
+    }
+    // auto-sleep after 3 idle minutes (mirrors the firmware's kAutoSleepMs)
+    if (!poweredOff && uiState !== UI.POWEROFF &&
+        Date.now() - lastActivity > AUTO_SLEEP_MS) powerOffFlow();
+  }, 500);
 
   drawScreen();
 })();

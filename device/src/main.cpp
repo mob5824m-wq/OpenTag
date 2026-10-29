@@ -48,7 +48,12 @@ extern "C" void otHmacSha256(const uint8_t *key, size_t keyLen,
 //   * Emulate the NDEF note as a virtual NTAG215 (Killer emulator slot 0).
 //   * Amiibo library: upload .bin dumps of your own amiibo tags over BLE
 //     (as a .zip via the web page or one-by-one), browse on the OLED and
-//     emulate any of them by presenting the dump's own 7-byte UID.
+//     emulate any of them by presenting the dump's own 7-byte UID. While
+//     emulating, UP/DOWN hot-swaps across the Killer's 8 slots.
+//   * Optional per-amiibo UID randomization: flagged entries are re-signed
+//     with a fresh random UID (amiitool crypto) on every emulation.
+//   * Soft power (hold OK at the menu) plus a 3-minute auto-sleep; both
+//     wake with a held OK.
 //   * Four-button UI: UP/DOWN navigate, OK selects, BACK cancels or exits
 //     (BACK = GPIO13 on J1-19, the repurposed SPI MISO pin).
 //   * BLE service with a text command channel and a binary chunk channel.
@@ -137,9 +142,17 @@ static uint8_t emuUid[7] = {0x04, 0, 0, 0, 0, 0, 0};
 static bool emuV3 = false;          // emulating a v3 (Air Riders) personality
 static uint8_t emuSlot = 0;        // live Killer emulator slot (0-7, rotates)
 
+// Auto-sleep: after 3 minutes with no button, BLE or tag activity the device
+// powers off through the same flow as long-press OK at the menu (BACK still
+// cancels inside the window, hold OK wakes).
+constexpr uint32_t kAutoSleepMs = 3UL * 60 * 1000;
+static uint32_t lastActivityMs = 0;
+static void noteActivity() { lastActivityMs = millis(); }
+
 // ---- amiibo library browser ----
 static char amiNames[Amiibo::kMaxFiles][Amiibo::kNameLen];
 static bool amiV3[Amiibo::kMaxFiles];   // entry is a v3 (1024+ byte) dump
+static bool amiRandom[Amiibo::kMaxFiles];  // entry flagged for UID randomization
 static size_t amiCount = 0;
 static size_t amiSelected = 0;
 static size_t amiTop = 0;
@@ -238,6 +251,7 @@ class CommandCallbacks final : public NimBLECharacteristicCallbacks {
       setStatus("ERR:format-or-size");
       return;
     }
+    noteActivity();   // a synced client is talking: don't auto-sleep under it
     queueCommand(raw);
   }
 };
@@ -251,6 +265,7 @@ class DataCallbacks final : public NimBLECharacteristicCallbacks {
     const uint16_t seq = (uint8_t)raw[0] << 8 | (uint8_t)raw[1];
     const uint8_t plen = (uint8_t)raw[2];
     if ((size_t)plen + 3 != raw.size()) return;
+    noteActivity();   // transfer in flight: never mid-upload
     portENTER_CRITICAL(&stateMux);
     if (!recvActive || recvComplete) {
       portEXIT_CRITICAL(&stateMux);
@@ -323,6 +338,28 @@ static void amiiboPath(const char *name, char *out, size_t cap) {
   snprintf(out, cap, "%s/%s.bin", Amiibo::kDir, name);
 }
 
+// Per-entry "randomize UID" flag: a zero-byte sidecar next to the dump
+// ("/amiibo/<name>.rnd"). Survives reboots and firmware updates, needs no
+// database, and listAmiibos() already ignores non-.bin files.
+static void randomFlagPath(const char *name, char *out, size_t cap) {
+  snprintf(out, cap, "%s/%s.rnd", Amiibo::kDir, name);
+}
+static bool amiiboRandomFlag(const char *name) {
+  char path[Amiibo::kNameLen + 16];
+  randomFlagPath(name, path, sizeof(path));
+  return LittleFS.exists(path);
+}
+static void setAmiiboRandomFlag(const char *name, bool on) {
+  char path[Amiibo::kNameLen + 16];
+  randomFlagPath(name, path, sizeof(path));
+  if (on) {
+    File f = LittleFS.open(path, "w");
+    if (f) f.close();
+  } else {
+    LittleFS.remove(path);
+  }
+}
+
 // Library display name: strips ".bin", turns - _ . into spaces and
 // capitalizes the first letter of every word — "kirby-air-riders.bin"
 // shows as "Kirby Air Riders", "Allycomplete(Air Riders).bin" keeps its
@@ -376,6 +413,7 @@ static size_t listAmiibos() {
     File f = LittleFS.open(path, "r");
     amiV3[i] = f && f.size() >= ntag215::kV3ImageBytes;
     if (f) f.close();
+    amiRandom[i] = amiiboRandomFlag(amiNames[i]);
   }
   return amiCount;
 }
@@ -406,6 +444,40 @@ static bool loadAmiiboImage(const char *name, uint8_t image[ntag215::kV3ImageByt
   if (!ntag215::validateDump(buf, got)) return false;
   ntag215::normalizeDump(buf, got, image);
   memcpy(emuUid, image, 7);
+  return true;
+}
+
+// TagMo-style "random tag": re-sign the dump for a fresh random UID. Only
+// the UID bytes and both BCCs change (page-2 byte 0 is preserved); the
+// console then treats it as a brand-new figure. Returns false (image left
+// untouched) if the dump does not verify under the loaded key files.
+static bool randomizeImageUid(uint8_t image[ntag215::kV3ImageBytes]) {
+  uint8_t idPages[9];
+  idPages[0] = 0x04;                                  // NXP manufacturer byte
+  for (int i = 1; i < 8; i++) idPages[i] = (uint8_t)random(256);
+  idPages[3] = 0x88 ^ idPages[0] ^ idPages[1] ^ idPages[2];  // BCC0
+  idPages[8] = image[8];                              // keep page-2 byte 0
+  if (!resign(&retailKeys, image, idPages)) return false;
+  // resign() covers the crypto region + PWD/PACK, but leaves the plain UID
+  // pages 0-1 alone (the physical-write flow never rewrites those). For
+  // emulation the image IS the tag, so patch them here.
+  memcpy(image, idPages, 8);
+  memcpy(emuUid, image, 7);
+  return true;
+}
+
+// Loads `name` for emulation, applying the per-entry random-UID re-sign when
+// flagged (v2 dumps with key files loaded). Falls back to the untouched dump
+// with a message instead of failing the emulation.
+static bool loadAmiiboForEmulation(const char *name,
+                                    uint8_t image[ntag215::kV3ImageBytes],
+                                    bool *v3) {
+  if (!loadAmiiboImage(name, image, v3)) return false;
+  if (!*v3 && amiiboRandomFlag(name)) {
+    if (keysReady && randomizeImageUid(image)) uiMessage = "UID randomized";
+    else if (!keysReady) uiMessage = "Random needs keys";
+    else uiMessage = "Re-sign failed";
+  }
   return true;
 }
 
@@ -459,6 +531,7 @@ void drawScreen(bool force = false) {
         formatAmiiboName(amiNames[idx], pretty, sizeof(pretty));
         oled.print(String(pretty).substring(0, amiV3[idx] ? 13 : 16));
         if (amiV3[idx]) oled.print(" V3");
+        if (amiRandom[idx]) oled.print(" R");
       }
       // The hint line doubles as the message line so feedback (missing keys,
       // V3 write refusal, absent Killer) is actually visible here.
@@ -677,7 +750,7 @@ bool startNoteEmulation() {
 bool startAmiiboEmulation(const char *name) {
   uint8_t image[ntag215::kV3ImageBytes];
   bool v3 = false;
-  if (!loadAmiiboImage(name, image, &v3)) return false;
+  if (!loadAmiiboForEmulation(name, image, &v3)) return false;
   if (!startEmulation(image, name, EMU_AMIIBO, v3)) {
     if (v3) uiMessage = "Killer fw lacks V3";  // extended pages rejected
     return false;
@@ -1154,7 +1227,21 @@ void handleButtons() {
     // had no exit path at all.
     if (btnBack.pressed()) { uiState = UI_MENU; uiMessage = ""; drawScreen(true); return; }
     if (btnUp.pressed() && amiCount) { amiSelected = (amiSelected + amiCount - 1) % amiCount; drawScreen(true); }
-    if (btnDown.pressed() && amiCount) { amiSelected = (amiSelected + 1) % amiCount; drawScreen(true); }
+    // Long-press DOWN toggles UID randomization for the selected entry (the
+    // library shows an "R" badge). Navigation fires on release so a hold
+    // never doubles as a scroll.
+    if (btnDown.held(1000)) {
+      if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
+      if (amiV3[amiSelected]) {
+        uiMessage = "V3: emulation only";   // v3 layout is not re-signable
+      } else {
+        setAmiiboRandomFlag(amiNames[amiSelected], !amiRandom[amiSelected]);
+        amiRandom[amiSelected] = !amiRandom[amiSelected];
+        uiMessage = amiRandom[amiSelected] ? "Random UID on" : "Random UID off";
+      }
+      drawScreen(true); return;
+    }
+    if (btnDown.shortPress(1000) && amiCount) { amiSelected = (amiSelected + 1) % amiCount; drawScreen(true); }
     // Long-press OK: write the selected amiibo to a physical NTAG215.
     if (btnOk.held(1000)) {
       if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
@@ -1214,7 +1301,8 @@ void handleButtons() {
                                     : (amiSelected + 1) % amiCount;
       uint8_t image[ntag215::kV3ImageBytes];
       bool v3 = false;
-      if (!loadAmiiboImage(amiNames[amiSelected], image, &v3)) {
+      uiMessage = "";
+      if (!loadAmiiboForEmulation(amiNames[amiSelected], image, &v3)) {
         uiMessage = "Load failed";
         drawScreen(true);
       } else if (!emuHotSwap(image, amiNames[amiSelected], v3)) {
@@ -1294,6 +1382,7 @@ void setup() {
   pinMode(Pins::BUTTON_DOWN, INPUT_PULLUP);
   pinMode(Pins::BUTTON_OK, INPUT_PULLUP);
   pinMode(Pins::BUTTON_BACK, INPUT_PULLUP);
+  noteActivity();   // start the auto-sleep clock at boot
 
   // Soft power-on: if OK just woke us from deep sleep, it must be held for
   // a full second to boot — a short tap goes straight back to sleep. This
@@ -1328,6 +1417,19 @@ void setup() {
 }
 
 void loop() {
+  // Any pressed (active-low) button counts as activity for the auto-sleep
+  // timer, whatever screen is showing.
+  if (digitalRead(Pins::BUTTON_UP) == LOW || digitalRead(Pins::BUTTON_DOWN) == LOW ||
+      digitalRead(Pins::BUTTON_OK) == LOW || digitalRead(Pins::BUTTON_BACK) == LOW) {
+    noteActivity();
+  }
+  // Auto-sleep: idle for 3 minutes -> the same power-off flow as long-press
+  // OK at the menu (BACK can still cancel inside the window).
+  if (uiState != UI_POWEROFF && millis() - lastActivityMs > kAutoSleepMs) {
+    powerOffFromMenu();
+    return;
+  }
+
   handleButtons();
 
   // Transfer chunk ACKs (pacing for the web page).
@@ -1390,6 +1492,7 @@ void loop() {
       if (nfc.ntagReadPage(3, page16) && page16[0] == 0xE1 && page16[2] == 0x3E) {
         tagReady = true;
         uiState = UI_TAG_READY;
+        noteActivity();   // a tag landing is user activity too
         uiMessage = "";
       } else {
         uiMessage = "Not an NTAG215 NDEF tag";

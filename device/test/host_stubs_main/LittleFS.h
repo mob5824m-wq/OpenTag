@@ -18,5 +18,6 @@ class LittleFSClass {
   bool mkdir(const char *) { return true; }
   File open(const char *, const char * = "r") { return File(); }
   bool remove(const char *) { return true; }
+  bool exists(const char *) { return false; }
 };
 extern LittleFSClass LittleFS;

@@ -260,7 +260,8 @@ def page_meet(pdf):
          ["Back", "NFC tap window ringed by the halo - tap consoles and "
                   "phones flat against it"],
          ["Left side", "USB-C charge port under the engraved lightning bolt"],
-         ["Right side", "Power slide switch (full off for storage)"]],
+         ["Right side", "Power slide switch (full off for storage)"],
+         ["Bottom-left corner", "Lanyard / keyring loop (4 mm bore)"]],
         [26, 94])
     pdf.tip("The engraved bolt marks the charging side. The charger's own "
             "indicator LEDs glow through the same port slot - so you can "
@@ -284,6 +285,9 @@ def page_power(pdf):
         "Wake: hold OK for about a second.",
         "Storage / travel: use the power switch on the right side - soft "
         "off still drains a tiny current, the switch does not.",
+        "Auto-sleep: left alone for 3 minutes (no buttons, no syncing, no "
+        "tag on the writer), it powers itself off the same way - BACK "
+        "cancels during the countdown, hold OK to wake.",
     ])
     pdf.tip("Soft off is a convenience, not a battery disconnect. For a "
             "multi-week shelf life, flip the side switch.", kind="warn")
@@ -297,6 +301,8 @@ def page_buttons(pdf):
          ["OK (short)", "Select, start emulation, confirm"],
          ["OK (hold 1 s)", "At the menu: power off. In the library: the "
                            "advanced write-to-tag path"],
+         ["DOWN (hold 1 s)", "In the library: flag the entry for UID "
+                             "randomization (R badge)"],
          ["BACK", "Cancel, stop emulation, go back one screen"],
          ["UP / DOWN while emulating", "Hot-swap to the next amiibo without "
                                        "stopping (uses all 8 emulator slots)"],
@@ -334,6 +340,17 @@ def page_library(pdf):
         "eight slots, so back-to-back console taps can use different "
         "figures.",
         "Press OK or BACK to stop.",
+    ])
+    pdf.h2("Random-UID re-sign")
+    pdf.bullets([
+        "Hold DOWN on an entry to flag it (an R badge appears next to the "
+        "name). Hold DOWN again to unflag.",
+        "Every emulation or hot-swap of a flagged entry re-signs it with a "
+        "fresh random unique ID, so a console treats it as a brand-new "
+        "figure each time - handy for games that limit rewards per tag.",
+        "Needs your key files loaded (the screen says Random needs keys "
+        "otherwise). V3 entries are excluded: their layout is not "
+        "re-signable.",
     ])
     pdf.h2("The V3 badge")
     pdf.body("Entries marked V3 (such as Kirby Air Riders figures) are the "
@@ -411,6 +428,9 @@ def page_help(pdf):
          ["BLE can't find the device",
           "Exit any active emulation first; keep the phone within a few "
           "metres; toggle BLE off/on"],
+         ["Turned off by itself",
+          "That's auto-sleep: 3 minutes with no input. Hold OK about a "
+          "second to wake where you left off"],
          ["Won't wake",
           "Hold OK a full second; if truly dead, charge it, then check the "
           "side power switch"]],
