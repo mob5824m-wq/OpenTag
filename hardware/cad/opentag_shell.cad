@@ -106,10 +106,38 @@ chg_slot_l = 12; chg_slot_z0 = 0.5; chg_slot_z1 = 4.5;
 bolt_px = 1.0; bolt_depth = 0.6; // engraved lightning bolt, 6 x 8 px
 bolt_cy = chg_slot_y; bolt_z0 = 6;
 bolt_cols = [0, 136, 76, 110, 59, 25];  // column bytes, bit 0 = top row
+// charge-status light pipe: a ~5 mm stub of 2.5 mm acrylic light-pipe
+// rod carries the TP4056's charge LED out through the west face, just
+// south of the charge slot (the shell bore grips the rod at 2.5; the
+// tray-wall bore seats its inner end a touch loose at 2.6). lp_y is on
+// the LED — nudge it to match your module before printing.
+lp_d = 2.5;                     // shell-wall bore (light grip on the rod)
+lp_tray_d = 2.6;                // tray-wall bore (loose seat, LED cone)
+lp_y = chg_slot_y - chg_slot_l/2 - 1.75;   // bore axis, 1.75 south of the slot
+lp_z = 2.5;                     // bore axis height (mid-wall over the tray)
 // lanyard / keyring loop: a corner tab shared by BOTH halves so the 4.2 mm
 // bore is continuous through the seam. SW corner (same side as the charge
 // port, clear of it and of the bolt), outboard of the screw boss.
 lug_cx = -51.5; lug_cy = 60; lug_w = 9; lug_l = 11; lug_r = 3; lug_hole = 4.2;
+
+// ---- desk stand (optional print) ------------------------------------------
+// The device rests chin-down (lanyard lug + USB-C up): back face on the
+// panel's top edge, bottom-back edge on the base, front face caught by
+// the lip's top-rear corner. With shell thickness t and cradle gap
+// g = stand_panel_front - (stand_lip_front + stand_lip_t) the lean is
+//   g = (panel_h - lip_h) tan(theta) + t / cos(theta)
+// 43.6 = 78 tan(theta) + 29.3 / cos(theta)  ->  theta ~ 10 deg.
+// The charge port ends up above the panel top, so it charges while docked.
+stand_w = 112;                  // 97.6 shell + finger room each side
+stand_base_d = 66.8; stand_base_t = 2.4; stand_base_r = 3;
+stand_front_y = -10.4;          // base front edge (18.4 mm scoop before the lip)
+stand_panel_t = 2.4; stand_panel_h = 92; stand_panel_r = 1;
+stand_brace_d = 8; stand_brace_h = 40;    // gusset at the panel's lower front
+stand_brace_ov = 0.5;           // brace fuses 0.5 mm into the panel (a
+                                // face-touching union leaves coincident faces)
+stand_lip_t = 2.4; stand_lip_h = 14; stand_lip_r = 1;
+stand_lip_front = 8;            // lip front face (y)
+stand_panel_front = 54;         // panel front face (y); cradle gap 43.6
 
 // ---- back-plate cutouts / supports ------------------------------------------------
 svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
@@ -239,6 +267,9 @@ module front_shell() {
     // charge port + charge-LED window, left wall over the power tray
     translate([-outer_w/2 - 0.01, chg_slot_y - chg_slot_l/2, chg_slot_z0])
       cube([wall + 0.02, chg_slot_l, chg_slot_z1 - chg_slot_z0]);
+    // charge-status light pipe, same wall just south of the slot
+    translate([-outer_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_d, h = wall + 0.02);
     // engraved wordmark on the chin (cut from the outer face inward)
     translate([0, 0, outer_d - brand_depth]) brand_mark();
     // engraved lightning bolt on the west face above the charge port
@@ -346,6 +377,10 @@ module back_plate() {
     // own bore region, never into solid material)
     translate([lug_cx, lug_cy, -floor_t - 0.01])
       cylinder(d = lug_hole, h = floor_t + 0.02);
+    // light-pipe rod seat through the tray's west wall + SW corner (a
+    // wall-local cut would be refilled by the south tray wall's union)
+    translate([tray_cx - tray_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_tray_d, h = 2.02);
     // NFC tap window: fully OPEN over the antenna — best read range.
     translate([kil_cx, kil_cy, -floor_t - 0.01])
       cylinder(d = tap_win, h = floor_t + 0.02);
@@ -393,6 +428,27 @@ module button_cap() {
 
 module assembly_front() { front_shell(); }
 
+// ---------------------------------------------------------------------------
+// DESK STAND (prints flat on the base; no supports needed)
+// ---------------------------------------------------------------------------
+module desk_stand() {
+  // base: rear edge flush with the panel's back face
+  translate([0, stand_front_y + stand_base_d/2, 0])
+    rbox(stand_w, stand_base_d, stand_base_t, stand_base_r);
+  // back panel: the device's back face rests on its top edge
+  translate([0, stand_panel_front + stand_panel_t/2, stand_base_t])
+    rbox(stand_w, stand_panel_t, stand_panel_h, stand_panel_r);
+  // brace: solid gusset tying the panel's lower front to the base (also
+  // keeps the thin panel printable); the device's bottom edge stops 8.4
+  // mm short of it at the ~10 deg lean
+  translate([-stand_w/2, stand_panel_front - stand_brace_d, stand_base_t])
+    cube([stand_w, stand_brace_d + stand_brace_ov, stand_brace_h]);
+  // front lip: its top-rear corner catches the device's front face
+  translate([0, stand_lip_front + stand_lip_t/2, stand_base_t])
+    rbox(stand_w, stand_lip_t, stand_lip_h, stand_lip_r);
+}
+
+if (part == "stand") desk_stand();
 if (part == "front") assembly_front();
 if (part == "back") back_plate();
 if (part == "both") {
@@ -406,6 +462,8 @@ if (part == "both") {
 //  * front shell: face down; the OLED rails and bosses need no supports.
 //  * back plate : flat side down; post feet and tray walls are printable
 //    as drawn (all overhangs are short bridges).
+//  * desk stand : flat on its base; the thin panel is tied to the base by
+//    the brace, so no supports are needed.
 //  * Use PLA/PETG; keep carbon- or metal-filled filaments away from the NFC
 //    tap zone. Verify the killer bay size against your PN532Killer PCB, the
 //    button-cap pusher length against your switch height (~8.5 mm assumed),

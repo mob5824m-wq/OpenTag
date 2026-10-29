@@ -143,7 +143,7 @@
   function drawFastHLine(x, y, w, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, 1); }
 
   // ---- device state (mirrors main.cpp globals) -----------------------------
-  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6, POWEROFF:7 };
+  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6, POWEROFF:7, BACKUP:8, FACTORY:9 };
   let uiState = UI.MENU, menuIndex = 0, uiMessage = '';
   let pendingPresent = true, pendingKind = 'TEXT', pendingValue = 'Hello from OpenTag';
   let bleConnected = true, nfcReady = true, keysReady = false;
@@ -160,13 +160,15 @@
   let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
   let poweredOff = false, powerOffTimer = null;
+  // travel mode (BLE off), factory-reset confirm clock, backup UID counter
+  let travelMode = false, factoryAskedAt = 0, backupUid = 0;
   // auto-sleep: 3 minutes with no interaction (any draw = activity, which
   // mirrors the firmware's button/BLE/tag activity resets)
   const AUTO_SLEEP_MS = 3 * 60 * 1000;
   let lastActivity = Date.now();
   const statusline = document.getElementById('statusline');
   const offNote = document.getElementById('offNote');
-  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF'];
+  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF','BACKUP','FACTORY'];
   function setStatus(t) { statusline.textContent = 'UI state: ' + stateNames[uiState] + (t ? ' — ' + t : ''); }
 
   // Library display name (mirror of formatAmiiboName in main.cpp): strips
@@ -252,13 +254,28 @@
       if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
       setTextColor(C.MINT); setCursor(8, 116);
       print(emuMode === 2 && amiCount > 1 ? 'UP/DN swap OK:stop' : 'BACK: stop');
+    } else if (uiState === UI.BACKUP) {
+      setTextColor(C.MINT); setCursor(8, 27); print('BACKUP TAG');
+      setTextColor(C.MUTED); setCursor(8, 50); print('Tap an amiibo on');
+      setCursor(8, 64); print('the back window.');
+      setCursor(8, 80); print('It is saved to the');
+      setCursor(8, 94); print('library under its UID.');
+      setTextColor(C.MINT); setCursor(8, 116); print('BACK: cancel');
+    } else if (uiState === UI.FACTORY) {
+      setTextColor(C.MINT); setCursor(8, 27); print('FACTORY RESET');
+      setTextColor(C.MUTED); setCursor(8, 50); print('Wipes the library,');
+      setCursor(8, 64); print('keys and settings.');
+      setTextColor(C.RED); setCursor(8, 82); print('This cannot be undone.');
+      setTextColor(C.MINT); setCursor(8, 104); print('Hold OK: wipe');
+      setCursor(8, 116); print('BACK: cancel');
     } else if (uiState === UI.POWEROFF) {
       setTextColor(C.WHITE); setCursor(8, 52); print('Powering off');
       setTextColor(C.MINT); setCursor(8, 76); print('BACK: cancel');
     } else {
-      const items = ['Amiibo library', 'BLE sync', 'Write NDEF note', 'Emulate NDEF note', 'Clear NDEF note'];
-      for (let i = 0; i < 5; i++) {
-        const y = 28 + i * 16;
+      const items = ['Amiibo library', 'Backup tag', 'BLE sync', 'Write NDEF note',
+                     'Emulate NDEF note', 'Clear NDEF note', 'Factory reset'];
+      for (let i = 0; i < 7; i++) {
+        const y = 22 + i * 12;
         setTextColor(i === menuIndex ? C.MINT : C.MUTED);
         setCursor(8, y); print(i === menuIndex ? '> ' : '  '); print(items[i]);
       }
@@ -290,7 +307,7 @@
       // BACK is the library's way out (a populated library had none before).
       if (state === 'back') { uiState = UI.MENU; uiMessage = ''; }
       if (state === 'up' && amiCount) amiSelected = (amiSelected + amiCount - 1) % amiCount;
-      if (state === 'down-hold') {   // toggle UID randomization (v2 only)
+      if (state === 'back-hold') {   // toggle UID randomization (v2 only)
         if (amiCount === 0) { uiState = UI.MENU; }
         else if (amiV3[amiSelected]) { uiMessage = 'V3: emulation only'; }
         else { amiRnd[amiSelected] = !amiRnd[amiSelected];
@@ -336,9 +353,21 @@
     } else if (uiState === UI.POWEROFF) {
       // 700 ms cancel window; only BACK aborts (mirrors powerOffFromMenu)
       if (state === 'back') cancelPowerOff();
+    } else if (uiState === UI.BACKUP) {
+      if (state === 'back' || state === 'ok') { uiState = UI.MENU; uiMessage = ''; }
+    } else if (uiState === UI.FACTORY) {
+      // wipe is irreversible: explicit hold, anything else cancels
+      if (state === 'ok-hold') { factoryReset(); }
+      else if (state === 'ok' || state === 'up' || state === 'down' || state === 'back') {
+        uiState = UI.MENU; uiMessage = 'Reset cancelled';
+      }
     } else { // MENU
-      if (state === 'up') { menuIndex = (menuIndex + 4) % 5; uiMessage = ''; }
-      if (state === 'down') { menuIndex = (menuIndex + 1) % 5; uiMessage = ''; }
+      if (state === 'up') { menuIndex = (menuIndex + 6) % 7; uiMessage = ''; }
+      if (state === 'down') { menuIndex = (menuIndex + 1) % 7; uiMessage = ''; }
+      if (state === 'back-hold') {   // travel mode: BLE advertising off
+        travelMode = !travelMode;
+        uiMessage = travelMode ? 'Travel mode on' : 'Travel mode off';
+      }
       if (state === 'back') uiMessage = "You're at the menu";
       // Long-press OK: soft power off. The menu action fires on release
       // ('ok'), so a hold never triggers it — same as the firmware.
@@ -347,17 +376,23 @@
         if (menuIndex === 0) {
           amiSelected = 0; amiTop = 0; uiState = UI.LIBRARY; uiMessage = '';
         } else if (menuIndex === 1) {
-          uiMessage = bleConnected ? 'Connected: use web sync' : 'OpenTag BLE is advertising';
+          if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { uiState = UI.BACKUP; uiMessage = ''; }
         } else if (menuIndex === 2) {
-          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
-          else if (!nfcReady) uiMessage = 'PN532Killer absent';
-          else { uiState = UI.WAIT_TAG; uiMessage = ''; }
+          if (travelMode) uiMessage = 'Travel: BLE off';
+          else uiMessage = bleConnected ? 'Connected: use web sync' : 'OpenTag BLE is advertising';
         } else if (menuIndex === 3) {
           if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
           else if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { uiState = UI.WAIT_TAG; uiMessage = ''; }
+        } else if (menuIndex === 4) {
+          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
+          else if (!nfcReady) uiMessage = 'PN532Killer absent';
           else { uiMessage = ''; startEmulation('NDEF note', 1); }
-        } else {
+        } else if (menuIndex === 5) {
           pendingPresent = false; pendingValue = ''; pendingKind = 'TEXT'; uiMessage = 'Pending note cleared';
+        } else {
+          uiState = UI.FACTORY; factoryAskedAt = Date.now(); uiMessage = '';
         }
       }
     }
@@ -379,6 +414,33 @@
     emuName = label; emuV3 = !!v3;
     for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256);
   }
+  // ---- factory reset + tag backup (mirrors firmware) ------------------------
+  function factoryReset() {
+    amiiboNames = []; amiV3 = []; amiRnd = [];
+    amiCount = 0; amiSelected = 0; amiTop = 0;
+    keysReady = false; document.getElementById('simKeys').checked = false;
+    travelMode = false;
+    pendingPresent = false; pendingValue = ''; pendingKind = 'TEXT';
+    uiState = UI.MENU; uiMessage = 'Factory reset done';
+  }
+  function backupTappedTag() {          // simTap while UI.BACKUP
+    backupUid++;
+    const hex = n => n.toString(16).padStart(2, '0');
+    const name = '04' + hex(backupUid & 0xFF) + hex((backupUid >> 8) & 0xFF) +
+                 'a1b2c3' + hex((backupUid * 7) & 0xFF);
+    const file = name + '.bin';
+    const order = amiiboNames.map((n, i) => [n, i]);
+    order.push([file, -1]);                 // -1 = the new entry (plain v2 dump)
+    order.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    const names = [], v3 = [], rnd = [];
+    for (const [n, i] of order) { names.push(n); v3.push(i < 0 ? false : amiV3[i]); rnd.push(i < 0 ? false : amiRnd[i]); }
+    amiiboNames = names; amiV3 = v3; amiRnd = rnd;
+    amiCount = amiiboNames.length;
+    amiSelected = amiiboNames.indexOf(file);
+    uiMessage = 'Saved';
+    uiState = UI.LIBRARY;
+  }
+
   // ---- soft power (mirrors enterDeepSleep / powerOffFromMenu) ----------------
   function powerOffFlow() {            // hold OK at the menu
     uiState = UI.POWEROFF; uiMessage = '';
@@ -411,15 +473,29 @@
   // as mouseup, so hovering across a button "pressed" it.
   function bindButton(el, kind) {
     let timer = null, longFired = false, isDown = false;
-    const down = e => { e.preventDefault(); isDown = true; el.classList.add('down'); longFired = false;
-      timer = setTimeout(() => { longFired = true;
-        pressed((kind === 'ok' || kind === 'down') ? kind + '-hold' : kind); }, 1000); };
+    // Auto-repeat with acceleration for the scroll buttons (mirrors the
+    // firmware's Button::repeating): nothing for 450 ms, then 280, 180 and
+    // a steady 110 ms. OK/BACK keep the long-press gesture instead.
+    let repTimer = null, repStage = 0, repeatFired = false;
+    const stopRepeat = () => { if (repTimer) { clearTimeout(repTimer); repTimer = null; } };
+    const stepRepeat = () => {
+      repeatFired = true;
+      pressed(kind);
+      const delays = [280, 180, 110];
+      repTimer = setTimeout(stepRepeat, delays[Math.min(repStage++, 2)]);
+    };
+    const down = e => { e.preventDefault(); isDown = true; el.classList.add('down');
+      longFired = false; repeatFired = false; repStage = 0;
+      if (kind === 'up' || kind === 'down') repTimer = setTimeout(stepRepeat, 450);
+      else timer = setTimeout(() => { longFired = true; pressed(kind + '-hold'); }, 1000); };
     const up = e => { e.preventDefault(); if (!isDown) return; isDown = false; el.classList.remove('down');
       if (timer) { clearTimeout(timer); timer = null; }
-      if (!longFired) pressed(kind); };
+      stopRepeat();
+      if (!longFired && !repeatFired) pressed(kind); };
     const leave = () => {  // pointer left the button: cancel, never fire
       if (!isDown) return; isDown = false; el.classList.remove('down');
-      if (timer) { clearTimeout(timer); timer = null; } };
+      if (timer) { clearTimeout(timer); timer = null; }
+      stopRepeat(); };
     el.addEventListener('mousedown', down); el.addEventListener('mouseup', up); el.addEventListener('mouseleave', leave);
     el.addEventListener('touchstart', down, { passive: false }); el.addEventListener('touchend', up);
     el.addEventListener('touchcancel', leave);
@@ -438,7 +514,7 @@
     e.preventDefault(); keyLong = false;
     btnEls[kind].classList.add('down');
     keyTimer = setTimeout(() => { keyLong = true;
-      pressed((kind === 'ok' || kind === 'down') ? kind + '-hold' : kind); }, 1000);
+      pressed((kind === 'ok' || kind === 'back') ? kind + '-hold' : kind); }, 1000);
   });
   document.addEventListener('keyup', e => {
     const kind = keymap[e.key]; if (!kind) return;
@@ -459,6 +535,7 @@
     drawScreen();
   };
   document.getElementById('simTap').onclick = () => {
+    if (uiState === UI.BACKUP) { backupTappedTag(); drawScreen(); return; }
     if (uiState === UI.WAIT_TAG) { uiState = UI.TAG_READY; uiMessage = ''; }
     else if (uiState === UI.WRITE_TAG) {
       // Simulated TagMo-style write: sign, write pages, verify.
@@ -501,6 +578,9 @@
   setInterval(() => {
     if (uiState === UI.LOCK_CONFIRM && Date.now() - lockAskedAt > 15000) {
       uiState = UI.MENU; uiMessage = 'Left unlocked'; drawScreen();
+    }
+    if (uiState === UI.FACTORY && Date.now() - factoryAskedAt > 15000) {
+      uiState = UI.MENU; uiMessage = 'Reset cancelled'; drawScreen();
     }
     // auto-sleep after 3 idle minutes (mirrors the firmware's kAutoSleepMs)
     if (!poweredOff && uiState !== UI.POWEROFF &&

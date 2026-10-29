@@ -274,8 +274,11 @@ def page_power(pdf):
     pdf.bullets([
         "Plug any USB-C cable into the side port marked with the "
         "engraved lightning bolt.",
-        "The charge LEDs on the charger module peek through the port slot: "
-        "glowing = charging, dark = full or unplugged.",
+        "The charge LEDs on the charger module peek through the port slot, "
+        "and a tiny acrylic light pipe just below the port carries the glow "
+        "to the outside face: glowing = charging, dark = full or unplugged.",
+        "The optional printed desk stand leans the OpenTag back about ten "
+        "degrees, charge port on top - it charges while docked.",
         "Charge fully before first use. A full battery lasts many hours of "
         "emulation; the screen sleeps when the device is off.",
     ])
@@ -297,13 +300,15 @@ def page_buttons(pdf):
     pdf.sheet("Buttons & the menu")
     pdf.table(
         ["Input", "What it does"],
-        [["UP / DOWN", "Move through lists and menu items"],
+        [["UP / DOWN", "Move through lists and menu items; hold to "
+                       "auto-repeat, speeding up as you hold"],
          ["OK (short)", "Select, start emulation, confirm"],
          ["OK (hold 1 s)", "At the menu: power off. In the library: the "
                            "advanced write-to-tag path"],
-         ["DOWN (hold 1 s)", "In the library: flag the entry for UID "
-                             "randomization (R badge)"],
-         ["BACK", "Cancel, stop emulation, go back one screen"],
+         ["BACK (short)", "Cancel, stop emulation, go back one screen"],
+         ["BACK (hold 1 s)", "In the library: flag the entry for UID "
+                             "randomization (R badge). At the menu: toggle "
+                             "travel mode"],
          ["UP / DOWN while emulating", "Hot-swap to the next amiibo without "
                                        "stopping (uses all 8 emulator slots)"],
          ["OK or BACK", "Stops an active emulation (any button stops the "
@@ -313,11 +318,48 @@ def page_buttons(pdf):
     pdf.table(
         ["Item", "What it's for"],
         [["Amiibo library", "Browse your amiibo, emulate one (opens first)"],
+         ["Backup tag", "Save a physical tag's dump to the library"],
          ["BLE sync", "Connect the web page or Android app"],
          ["Write NDEF note", "Write your note to a physical NTAG215"],
          ["Emulate NDEF note", "Present the note as a virtual tag"],
-         ["Clear NDEF note", "Erase the stored note"]],
+         ["Clear NDEF note", "Erase the stored note"],
+         ["Factory reset", "Wipe library, keys and settings (hold OK to "
+                           "confirm)"]],
         [34, 86])
+
+
+def page_more(pdf):
+    pdf.sheet("Backup, travel & reset")
+    pdf.h2("Backup tag (reader mode)")
+    pdf.bullets([
+        "Pick Backup tag and tap any amiibo (or other NTAG215) flat "
+        "against the halo on the back.",
+        "The device reads and checks the tag, then saves its dump to the "
+        "library under the tag's own unique-ID name, ready to emulate. "
+        "New-generation V3 figures save as full images.",
+        "Reading a tag you already saved says Already saved and jumps to "
+        "it; a rewritten tag with the same unique ID saves as a -2 copy.",
+    ])
+    pdf.h2("Travel mode")
+    pdf.bullets([
+        "Hold BACK for a second at the menu to toggle it; the screen says "
+        "Travel mode on or off.",
+        "On: the device stops advertising over Bluetooth, so phones cannot "
+        "discover it. Everything else keeps working; the BLE sync item "
+        "reminds you it's on.",
+        "The setting survives reboots and firmware updates.",
+    ])
+    pdf.h2("Factory reset")
+    pdf.bullets([
+        "The last menu item wipes the library, key files and settings back "
+        "to as-built (travel mode included).",
+        "Confirm by holding OK for about a second and a quarter. Any short "
+        "press cancels, and the screen gives up after 15 seconds.",
+        "There is no undo - re-load your dumps from the sync page "
+        "afterwards.",
+    ])
+    pdf.tip("Somewhere with strict radio rules? Travel mode plus the side "
+            "power switch covers it.", kind="warn")
 
 
 def page_library(pdf):
@@ -343,8 +385,8 @@ def page_library(pdf):
     ])
     pdf.h2("Random-UID re-sign")
     pdf.bullets([
-        "Hold DOWN on an entry to flag it (an R badge appears next to the "
-        "name). Hold DOWN again to unflag.",
+        "Hold BACK on an entry to flag it (an R badge appears next to the "
+        "name). Hold BACK again to unflag.",
         "Every emulation or hot-swap of a flagged entry re-signs it with a "
         "fresh random unique ID, so a console treats it as a brand-new "
         "figure each time - handy for games that limit rewards per tag.",
@@ -473,6 +515,7 @@ def main():
     page_meet(pdf)
     page_power(pdf)
     page_buttons(pdf)
+    page_more(pdf)
     page_library(pdf)
     page_write(pdf)
     page_ndef(pdf)

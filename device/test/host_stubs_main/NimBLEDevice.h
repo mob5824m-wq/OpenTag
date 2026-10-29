@@ -50,4 +50,5 @@ class NimBLEDevice {
   static NimBLEServer *createServer() { return new NimBLEServer(); }
   static NimBLEAdvertising *getAdvertising() { return new NimBLEAdvertising(); }
   static void startAdvertising() {}
+  static void stopAdvertising() {}
 };

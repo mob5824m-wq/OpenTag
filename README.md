@@ -26,6 +26,10 @@ guide, and parts list.
   (no dependencies) for BLE file dumping: pick `.bin` dumps or a `.zip` of
   them, upload to the device, browse the on-device library, and trigger
   emulation.
+- **Tag backup (reader mode)** — from the device menu, tap any amiibo
+  against the back window and the firmware reads, validates, and stores the
+  dump in the library (named by the tag's UID; full 1024-byte images for
+  V3/NTAG I²C tags). No phone needed.
 - **One-command firmware updates** ([`tools/update_opentag.py`](tools/update_opentag.py))
   — plug the OpenTag into a computer and run the script: it downloads the
   latest firmware release from GitHub (CI builds and attaches it on every
@@ -259,16 +263,24 @@ library entry.
 ## Charging
 
 Charge through the **USB-C port on the left side**, marked by the engraved
-lightning bolt — the TP4056's charge LEDs peek through the same slot, so
-charging is visible with the case closed. Soft-off still draws a few mA
+lightning bolt — the TP4056's charge LEDs peek through the same slot, and a
+**light pipe** (a ~5 mm stub of 2.5 mm acrylic rod seated in the tray wall
+just below the port) carries the charge LED's glow out through the west
+face, so charging is visible with the case closed even in bright rooms. The
+optional printed **desk stand**
+([`hardware/cad/stl/opentag_desk_stand.stl`](hardware/cad/stl/opentag_desk_stand.stl))
+holds the OpenTag leaning back at ~10°, chin down — the charge port and
+lanyard lug end up on top, so it charges while docked. Soft-off still draws a few mA
 (the DevKitC regulator and boost stay alive), so use the side switch when
 storing the device.
 
 ## Device menu
 
 `Amiibo library` (first — emulation is the main use, so the menu opens on
-it) → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
-`Clear NDEF note`, driven by UP/DOWN/OK with BACK to cancel or exit. Emulation
+it) → `Backup tag` → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
+`Clear NDEF note` → `Factory reset`, driven by UP/DOWN/OK with BACK to
+cancel or exit. Holding UP or DOWN auto-repeats (first extra step after
+450 ms, then accelerating), so long libraries scroll quickly. Emulation
 starts on the PN532Killer's slot
 0. **While an amiibo is emulating, UP/DOWN hot-swaps to the neighbouring
 library entry without stopping** — each swap loads onto the next of the
@@ -285,12 +297,36 @@ for storage. **Auto-sleep:** after 3 minutes with no button, BLE or tag
 activity the device powers off through the same flow (BACK still cancels
 inside the window); mid-transfer BLE traffic resets the timer.
 
-**Random-UID re-sign (per amiibo):** hold DOWN on a library entry to flag it
+**Backup tag (reader mode):** the second menu item turns the OpenTag into a
+reader — tap any amiibo (or other NTAG215) flat against the back window and
+the firmware reads it, validates it (UID/BCC + capability container), and
+saves a normalized 540-byte dump to the library under the tag's 7-byte UID
+hex name (V3/NTAG I²C Plus tags save their full 1024-byte image instead).
+An identical re-read says `Already saved` and just jumps to the entry; a
+tag rewritten with different data but the same UID saves as `-2`, `-3`, …
+BACK or OK leaves the reader screen.
+
+**Travel mode:** hold BACK (1 s) at the menu to toggle. On, the device stops
+BLE advertising completely — it won't appear in phone scans — while
+everything else (emulation, buttons, auto-sleep) keeps working; `BLE sync`
+while it's on says `Travel: BLE off`. The setting persists across reboots
+and survives firmware updates. Use it anywhere you'd put a phone in
+airplane mode.
+
+**Random-UID re-sign (per amiibo):** hold BACK on a library entry to flag it
 (an `R` badge appears). Every emulation or hot-swap of a flagged entry then
 re-signs the dump for a fresh random UID with the on-device amiitool crypto,
 so consoles treat it as a brand-new figure each time — needs your key files
 loaded (`Random needs keys` says so otherwise), v2 dumps only, and the flag
-persists as a zero-byte `.rnd` sidecar next to the dump. Preview the whole interface (buttons, long-press, every screen,
+persists as a zero-byte `.rnd` sidecar next to the dump.
+
+**Factory reset:** the last menu item wipes the amiibo library (including
+`.rnd` flags), the signing keys, and all settings (travel mode included)
+back to as-built. The confirm screen requires **holding OK for ~1.2 s**;
+any short press cancels, and the screen gives up on its own after 15 s.
+There is no undo — re-load your dumps from the web page afterwards.
+
+Preview the whole interface (buttons, long-press, every screen,
 power off/on) in your
 browser with [`device/web-preview/index.html`](device/web-preview/index.html).
 

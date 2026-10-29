@@ -119,6 +119,9 @@ static bool recvIsKeys = false;     // transfer carries key files, not a dump
 // ---- amiibo signing keys (user-supplied, stored in NVS, never bundled) ----
 static amiibo::AmiiboKeys retailKeys;
 static bool keysReady = false;
+// Travel mode: BLE advertising off (toggled by holding BACK at the menu).
+static bool travelMode = false;
+static unsigned long factoryAskedAt = 0;   // confirm-screen timeout clock
 static void refreshKeyState() {
   uint8_t data[amiibo::kKeyFileSize] = {0};
   uint8_t tag[amiibo::kKeyFileSize] = {0};
@@ -157,8 +160,8 @@ static size_t amiCount = 0;
 static size_t amiSelected = 0;
 static size_t amiTop = 0;
 
-enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_EMULATE,
-                         UI_WRITE_TAG, UI_LOCK_CONFIRM, UI_POWEROFF };
+enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_BACKUP, UI_EMULATE,
+                         UI_WRITE_TAG, UI_LOCK_CONFIRM, UI_FACTORY, UI_POWEROFF };
 static uint8_t uiState = UI_MENU;
 
 static unsigned long lastDraw = 0;
@@ -222,6 +225,22 @@ struct Button {
     releaseEdge = false;
     if (millis() - changedAt > 250) return false;  // stale edge
     return pressDur < maxHoldMs;
+  }
+  // Auto-repeat with acceleration while held: nothing for the first
+  // ~450 ms (so a hold can still be a gesture), then steps at 280, 180
+  // and a steady 110 ms. Use for list scrolling; pair with pressed().
+  unsigned long repeatNext = 0;
+  uint8_t repeatStage = 0;
+  bool repeating() {
+    update();
+    if (lastStable == HIGH) { repeatNext = 0; repeatStage = 0; return false; }
+    if (repeatNext == 0) { repeatNext = millis() + 450; return false; }
+    if ((long)(millis() - repeatNext) >= 0) {
+      repeatNext = millis() + (repeatStage == 0 ? 280 : (repeatStage == 1 ? 180 : 110));
+      if (repeatStage < 2) repeatStage++;
+      return true;
+    }
+    return false;
   }
 };
 Button btnUp(Pins::BUTTON_UP), btnDown(Pins::BUTTON_DOWN), btnOk(Pins::BUTTON_OK),
@@ -291,7 +310,7 @@ class ServerCallbacks final : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *, NimBLEConnInfo &) override { bleConnected = true; }
   void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int) override {
     bleConnected = false;
-    NimBLEDevice::startAdvertising();
+    if (!travelMode) NimBLEDevice::startAdvertising();
   }
 };
 
@@ -311,9 +330,11 @@ void beginBle() {
   data->setCallbacks(new DataCallbacks());
   statusCharacteristic->setValue("READY");
   service->start();
-  NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
-  advertising->addServiceUUID(BleIds::SERVICE);
-  advertising->start();
+  if (!travelMode) {
+    NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
+    advertising->addServiceUUID(BleIds::SERVICE);
+    advertising->start();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +503,134 @@ static bool loadAmiiboForEmulation(const char *name,
 }
 
 // ---------------------------------------------------------------------------
+// Tag backup (reader mode) + factory reset
+// ---------------------------------------------------------------------------
+void drawScreen(bool force);
+
+// Dumps a presented NTAG215 tag page by page and saves it as a library
+// entry named after its UID. Amiibo (v2) tags read as 135 pages; Air
+// Riders-generation tags keep reading through page 0xFF and store the full
+// 1024-byte image. Blocking (~2-3 s); the screen says so first.
+static void runTagBackup() {
+  drawScreen(true);   // show the backup screen under the progress note
+  oled.setTextColor(LAVENDER); oled.setCursor(8, 108); oled.print("Reading tag...");
+  uint8_t image[ntag215::kV3ImageBytes];
+  memset(image, 0, sizeof(image));
+  bool ok = true;
+  for (uint16_t base = 0; base < 136 && ok; base += 4) {
+    uint8_t page16[16];
+    if (!nfc.ntagReadPage((uint8_t)base, page16)) ok = false;
+    else memcpy(image + (size_t)base * 4, page16, 16);
+  }
+  size_t len = 0;
+  if (ok) {
+    uint8_t norm[540];
+    if (ntag215::validateDump(image, 540)) {
+      ntag215::normalizeDump(image, 540, norm);
+      memcpy(image, norm, 540);       // files are stored normalized
+      len = 540;
+    } else {
+      // v2 structure didn't verify: try the extended (v3) read.
+      for (uint16_t base = 136; base < 256 && ok; base += 4) {
+        uint8_t page16[16];
+        if (!nfc.ntagReadPage((uint8_t)base, page16)) ok = false;
+        else memcpy(image + (size_t)base * 4, page16, 16);
+      }
+      if (ok && ntag215::validateV3Dump(image, ntag215::kV3ImageBytes)) len = ntag215::kV3ImageBytes;
+      else ok = false;
+    }
+  }
+  if (!ok) {
+    uiMessage = "Not an amiibo tag";
+    drawScreen(true);
+    return;
+  }
+  char name[Amiibo::kNameLen];
+  snprintf(name, sizeof(name), "%02x%02x%02x%02x%02x%02x%02x",
+           image[0], image[1], image[2], image[3], image[4], image[5], image[6]);
+  // Deduplicate: same UID + identical content = already backed up; a changed
+  // dump (e.g. a re-randomized figure) lands as name-2, name-3, ...
+  char candidate[Amiibo::kNameLen];
+  strlcpy(candidate, name, sizeof(candidate));
+  for (int n = 1; ; n++) {
+    char path[64];
+    amiiboPath(candidate, path, sizeof(path));
+    if (!LittleFS.exists(path)) break;
+    File f = LittleFS.open(path, "r");
+    bool same = false;
+    if (f) {
+      uint8_t have[ntag215::kV3ImageBytes];
+      size_t got = f.read(have, len);
+      f.close();
+      same = got == len && memcmp(have, image, len) == 0;
+    }
+    if (same) {
+      uiMessage = "Already saved";
+      listAmiibos();
+      for (size_t i = 0; i < amiCount; i++)
+        if (!strcmp(amiNames[i], candidate)) { amiSelected = i; break; }
+      uiState = UI_LIBRARY;
+      drawScreen(true);
+      return;
+    }
+    snprintf(candidate, sizeof(candidate), "%s-%d", name, n + 1);
+  }
+  char path[64];
+  amiiboPath(candidate, path, sizeof(path));
+  File f = LittleFS.open(path, FILE_WRITE);
+  bool saved = false;
+  if (f) {
+    saved = f.write(image, len) == len;
+    f.close();
+  }
+  if (!saved) {
+    uiMessage = "Save failed";
+    drawScreen(true);
+    return;
+  }
+  char status[80];
+  snprintf(status, sizeof(status), "OK:backup:%s", candidate);
+  setStatus(status);
+  uiMessage = "Saved";
+  listAmiibos();
+  for (size_t i = 0; i < amiCount; i++)
+    if (!strcmp(amiNames[i], candidate)) { amiSelected = i; break; }
+  uiState = UI_LIBRARY;
+  drawScreen(true);
+}
+
+// Wipes the amiibo library (dumps + .rnd sidecars), the key files, the NDEF
+// note and all settings (NVS). The library refreshes empty afterwards.
+static void factoryReset() {
+  uiMessage = "Wiping...";
+  drawScreen(true);
+  File dir = LittleFS.open(Amiibo::kDir);
+  if (dir) {
+    for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+      if (f.isDirectory()) continue;
+      const char *base = strrchr(f.name(), '/');
+      base = base ? base + 1 : f.name();
+      char path[Amiibo::kNameLen + 16];
+      snprintf(path, sizeof(path), "%s/%s", Amiibo::kDir, base);
+      f.close();
+      LittleFS.remove(path);
+    }
+  }
+  prefs.clear();                    // keys-data/keys-tag, note, emuid7, travel
+  keysReady = false;
+  travelMode = false;
+  pendingPresent = false;
+  pendingValue[0] = 0;
+  strlcpy(pendingKind, "TEXT", sizeof(pendingKind));
+  listAmiibos();
+  amiSelected = 0; amiTop = 0;
+  uiState = UI_MENU;
+  uiMessage = "Factory reset done";
+  setStatus("OK:factory-reset");
+  drawScreen(true);
+}
+
+// ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
 
@@ -593,14 +742,29 @@ void drawScreen(bool force = false) {
     }
     oled.setTextColor(MINT); oled.setCursor(8, 116);
     oled.print(emuMode == EMU_AMIIBO && amiCount > 1 ? "UP/DN swap OK:stop" : "BACK: stop");
+  } else if (uiState == UI_BACKUP) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("BACKUP TAG");
+    oled.setTextColor(MUTED); oled.setCursor(8, 50); oled.print("Tap an amiibo on");
+    oled.setCursor(8, 64); oled.print("the back window.");
+    oled.setCursor(8, 80); oled.print("It is saved to the");
+    oled.setCursor(8, 94); oled.print("library under its UID.");
+    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: cancel");
+  } else if (uiState == UI_FACTORY) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("FACTORY RESET");
+    oled.setTextColor(MUTED); oled.setCursor(8, 50); oled.print("Wipes the library,");
+    oled.setCursor(8, 64); oled.print("keys and settings.");
+    oled.setTextColor(RED); oled.setCursor(8, 82); oled.print("This cannot be undone.");
+    oled.setTextColor(MINT); oled.setCursor(8, 104); oled.print("Hold OK: wipe");
+    oled.setCursor(8, 116); oled.print("BACK: cancel");
   } else if (uiState == UI_POWEROFF) {
     oled.setTextColor(WHITE); oled.setCursor(8, 52); oled.print("Powering off");
     oled.setTextColor(MINT); oled.setCursor(8, 76); oled.print("BACK: cancel");
   } else {
-    const char *items[] = {"Amiibo library", "BLE sync", "Write NDEF note",
-                           "Emulate NDEF note", "Clear NDEF note"};
-    for (int i = 0; i < 5; ++i) {
-      const int y = 28 + i * 16;
+    const char *items[] = {"Amiibo library", "Backup tag", "BLE sync",
+                           "Write NDEF note", "Emulate NDEF note",
+                           "Clear NDEF note", "Factory reset"};
+    for (int i = 0; i < 7; ++i) {
+      const int y = 22 + i * 12;
       oled.setTextColor(i == menuIndex ? MINT : MUTED);
       oled.setCursor(8, y); oled.print(i == menuIndex ? "> " : "  "); oled.print(items[i]);
     }
@@ -1225,23 +1389,26 @@ void handleButtons() {
   } else if (uiState == UI_LIBRARY) {
     // BACK is the library's way out; before it existed a populated library
     // had no exit path at all.
-    if (btnBack.pressed()) { uiState = UI_MENU; uiMessage = ""; drawScreen(true); return; }
-    if (btnUp.pressed() && amiCount) { amiSelected = (amiSelected + amiCount - 1) % amiCount; drawScreen(true); }
-    // Long-press DOWN toggles UID randomization for the selected entry (the
-    // library shows an "R" badge). Navigation fires on release so a hold
-    // never doubles as a scroll.
-    if (btnDown.held(1000)) {
-      if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
-      if (amiV3[amiSelected]) {
-        uiMessage = "V3: emulation only";   // v3 layout is not re-signable
-      } else {
+    // BACK exits on a short press; holding it toggles UID randomization for
+    // the selected entry (the library shows an "R" badge). UP/DOWN scroll on
+    // the press edge and auto-repeat with acceleration while held.
+    if (btnBack.held(1000)) {
+      if (amiCount && !amiV3[amiSelected]) {
         setAmiiboRandomFlag(amiNames[amiSelected], !amiRandom[amiSelected]);
         amiRandom[amiSelected] = !amiRandom[amiSelected];
         uiMessage = amiRandom[amiSelected] ? "Random UID on" : "Random UID off";
+      } else if (amiCount) {
+        uiMessage = "V3: emulation only";   // v3 layout is not re-signable
       }
       drawScreen(true); return;
     }
-    if (btnDown.shortPress(1000) && amiCount) { amiSelected = (amiSelected + 1) % amiCount; drawScreen(true); }
+    if (btnBack.shortPress(1000)) { uiState = UI_MENU; uiMessage = ""; drawScreen(true); return; }
+    if ((btnUp.pressed() || btnUp.repeating()) && amiCount) {
+      amiSelected = (amiSelected + amiCount - 1) % amiCount; drawScreen(true);
+    }
+    if ((btnDown.pressed() || btnDown.repeating()) && amiCount) {
+      amiSelected = (amiSelected + 1) % amiCount; drawScreen(true);
+    }
     // Long-press OK: write the selected amiibo to a physical NTAG215.
     if (btnOk.held(1000)) {
       if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
@@ -1291,6 +1458,19 @@ void handleButtons() {
       setStatus("OK:lock-skipped");
       drawScreen(true);
     }
+  } else if (uiState == UI_BACKUP) {
+    if (btnBack.pressed() || btnOk.pressed()) { uiState = UI_MENU; uiMessage = ""; drawScreen(true); }
+  } else if (uiState == UI_FACTORY) {
+    // Wiping the library/keys/settings is irreversible: explicit long press,
+    // any other button (or 15 s) cancels — same pattern as tag locking.
+    if (btnOk.held(1200)) {
+      factoryReset();
+    } else if (btnOk.shortPress(1200) || btnUp.pressed() || btnDown.pressed() ||
+               btnBack.pressed() || millis() - factoryAskedAt > 15000) {
+      uiState = UI_MENU;
+      uiMessage = "Reset cancelled";
+      drawScreen(true);
+    }
   } else if (uiState == UI_EMULATE) {
     // Amiibo mode: UP/DOWN hot-swaps to the neighbouring library entry on a
     // rotating emulator slot; the emulation keeps running. OK/BACK stop.
@@ -1320,9 +1500,19 @@ void handleButtons() {
       }
     }
   } else {  // UI_MENU
-    if (btnUp.pressed()) { menuIndex = (menuIndex + 4) % 5; uiMessage = ""; drawScreen(true); }
-    if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 5; uiMessage = ""; drawScreen(true); }
-    if (btnBack.pressed()) { uiMessage = "You're at the menu"; drawScreen(true); }
+    if (btnUp.pressed()) { menuIndex = (menuIndex + 6) % 7; uiMessage = ""; drawScreen(true); }
+    if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 7; uiMessage = ""; drawScreen(true); }
+    // Long-press BACK at the menu toggles travel mode (BLE advertising off:
+    // private + a bit quieter on the go). A short BACK just reports position.
+    if (btnBack.held(1000)) {
+      travelMode = !travelMode;
+      prefs.putBool("travel", travelMode);
+      if (travelMode) NimBLEDevice::stopAdvertising();
+      else NimBLEDevice::startAdvertising();
+      uiMessage = travelMode ? "Travel mode on" : "Travel mode off";
+      drawScreen(true); return;
+    }
+    if (btnBack.shortPress(1000)) { uiMessage = "You're at the menu"; drawScreen(true); }
     // Long-press OK: soft power off. The menu action itself moved to
     // short-press so a hold never triggers it (fires on release, exactly
     // like the web preview).
@@ -1334,20 +1524,28 @@ void handleButtons() {
         uiState = UI_LIBRARY;
         uiMessage = "";
       } else if (menuIndex == 1) {
-        uiMessage = bleConnected ? "Connected: use web sync" : "OpenTag BLE is advertising";
+        if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); }
+        else { uiState = UI_BACKUP; uiMessage = ""; }
       } else if (menuIndex == 2) {
-        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
-        else if (!nfcReady) uiMessage = "PN532Killer absent";
-        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
+        if (travelMode) uiMessage = "Travel: BLE off";
+        else uiMessage = bleConnected ? "Connected: use web sync" : "OpenTag BLE is advertising";
       } else if (menuIndex == 3) {
         if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
         else if (!nfcReady) uiMessage = "PN532Killer absent";
+        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
+      } else if (menuIndex == 4) {
+        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
+        else if (!nfcReady) uiMessage = "PN532Killer absent";
         else { uiMessage = ""; if (!startNoteEmulation()) { uiMessage = "Emulation failed"; setStatus("ERR:emulate"); } }
-      } else {
+      } else if (menuIndex == 5) {
         memset(pendingValue, 0, sizeof(pendingValue));
         strlcpy(pendingKind, "TEXT", sizeof(pendingKind));
         prefs.remove("kind"); prefs.remove("value");
         pendingPresent = false; uiMessage = "Pending note cleared";
+      } else {
+        uiState = UI_FACTORY;
+        factoryAskedAt = millis();
+        uiMessage = "";
       }
       drawScreen(true);
     }
@@ -1383,6 +1581,7 @@ void setup() {
   pinMode(Pins::BUTTON_OK, INPUT_PULLUP);
   pinMode(Pins::BUTTON_BACK, INPUT_PULLUP);
   noteActivity();   // start the auto-sleep clock at boot
+  travelMode = prefs.getBool("travel", false);
 
   // Soft power-on: if OK just woke us from deep sleep, it must be held for
   // a full second to boot — a short tap goes straight back to sleep. This
@@ -1498,6 +1697,17 @@ void loop() {
         uiMessage = "Not an NTAG215 NDEF tag";
       }
       drawScreen(true);
+    }
+  }
+
+  // Poll for a tag while the backup screen is up, then dump + save it.
+  if (uiState == UI_BACKUP && nfcReady && millis() - lastNfcPoll > 120) {
+    lastNfcPoll = millis();
+    uint8_t uid[7] = {0};
+    uint8_t uidLen = 0;
+    if (nfc.readPassiveTarget(uid, &uidLen, 60)) {
+      noteActivity();
+      runTagBackup();
     }
   }
 

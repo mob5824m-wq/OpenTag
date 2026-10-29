@@ -31,7 +31,7 @@
 ## Printed parts (`hardware/cad/opentag_shell.cad`)
 
 Print-ready STLs are in `hardware/cad/stl/` (front shell, back plate, button
-cap — print 4 caps). Regenerate them with OpenSCAD
+cap — print 4 caps — and the optional desk stand). Regenerate them with OpenSCAD
 (`openscad -o front.stl -D 'part="front"' opentag_shell.cad`, etc.) or with
 `python3 tools/cad_to_stl.py`, which also self-checks the mesh.
 
@@ -48,7 +48,10 @@ engraved halo ring around the NFC cradle marking the tap zone — both
 The west wall carries the **charging port**: a slot over the tray's west
 end (the tray wall is notched behind it) so the TP4056's USB-C jack and
 charge LEDs are reachable with the case closed, marked by an engraved
-lightning bolt above the slot — charge the device on that side. The
+lightning bolt above the slot — charge the device on that side. Just south
+of the slot, a ⌀2.5 mm **light-pipe bore** through the west wall lines up
+with a ⌀2.6 mm seat in the tray wall: press a ~5 mm stub of 2.5 mm acrylic
+rod through it and the charge LED's glow reaches the outside face. The
 south-west corner carries a **lanyard / keyring loop**: a tab shared by both
 halves with a continuous 4.2 mm bore through the seam.
 Cutouts are placed so nothing needs
@@ -59,6 +62,8 @@ supports: both halves print as drawn (front face-down, plate flat-side-down).
 | 19 | Front shell | 1 | PLA/PETG — **not** carbon- or metal-filled near the tap zone |
 | 20 | Back plate | 1 | PLA/PETG |
 | 21 | Button cap | 4 | PLA/PETG or TPU |
+| 22 | Desk stand (optional) | 1 | PLA/PETG; device leans ~10° chin-down, charges while docked |
+| 23 | Acrylic rod ⌀2.5 mm (optional light pipe) | ~5 mm | Sand/polish the ends; nudge `lp_y` in the `.cad` onto your module's LED |
 
 ## Where to buy (no affiliation)
 

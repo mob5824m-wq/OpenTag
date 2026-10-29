@@ -13,6 +13,7 @@ Outputs (millimetres, binary STL):
     hardware/cad/stl/opentag_front_shell.stl
     hardware/cad/stl/opentag_back_plate.stl
     hardware/cad/stl/opentag_button_cap.stl
+    hardware/cad/stl/opentag_desk_stand.stl
 
 Deps:  pip install trimesh manifold3d scipy rtree
 """
@@ -47,6 +48,13 @@ def cube(w, l, h):
 def cyl(d, h, seg=SEG):
     return T(trimesh.creation.cylinder(radius=d / 2, height=h, sections=seg),
              [0, 0, h / 2])
+
+def cyl_x(d, h, seg=SEG):
+    """Cylinder along +x (base at the translate origin, like cube())."""
+    m = cyl(d, h, seg)
+    m.apply_transform(
+        trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+    return m
 
 def _ring_mesh(r0, r1, h, seg):
     """Cylinder/frustum, base z=0 (r0 at z=0, r1 at z=h)."""
@@ -248,6 +256,14 @@ def front_shell(p):
                                   p["sw_slot_z0"], p["sw_slot_z1"], west=False)
     chg_thru, chg_plug = wall_slot(p["chg_slot_y"], p["chg_slot_l"],
                                     p["chg_slot_z0"], p["chg_slot_z1"], west=True)
+    # charge-status light pipe: bore along x through the west wall, just
+    # south of the charge slot. Cut through BOTH walls (a cut ending flush
+    # on the cavity face leaves a zero-thickness cap in manifold3d), then
+    # plug the east wall back — same pattern as wall_slot().
+    lp_thru = T(cyl_x(p["lp_d"], p["outer_w"] + 0.03),
+                [-p["outer_w"] / 2 - 0.01, p["lp_y"], p["lp_z"]])
+    lp_plug = T(cyl_x(p["lp_d"], p["wall"]),
+                [p["inner_w"] / 2, p["lp_y"], p["lp_z"]])
     # lanyard tab: bored through, fuses with the outer box (x overlap
     # -outer_w/2 .. lug_cx + lug_w/2)
     lug = difference([T(rbox(p["lug_w"], p["lug_l"], p["outer_d"], p["lug_r"]),
@@ -255,9 +271,9 @@ def front_shell(p):
                       T(cyl(p["lug_hole"], p["outer_d"] + 0.02),
                         [p["lug_cx"], p["lug_cy"], -0.01])])
     shell = union([difference([outer, inner, oled] + btns
-                              + [usb_thru, sw_thru, chg_thru]
+                              + [usb_thru, sw_thru, chg_thru, lp_thru]
                               + brand_boxes(p) + bolt_boxes(p)),
-                   usb_plug, sw_plug, chg_plug, lug])
+                   usb_plug, sw_plug, chg_plug, lp_plug, lug])
     # OLED side rails (fused +0.02 into the face, see .cad)
     rails = [T(cube(1.6, 34.5, p["inner_d"] - p["oled_top"] + 0.02),
                [p["oled_cx"] + sx * (37.5 / 2 + 0.8) - 0.8,
@@ -345,6 +361,11 @@ def back_plate(p):
     # lanyard bore (overshoots up into the front tab's bore region only)
     cuts.append(T(cyl(p["lug_hole"], p["floor_t"] + 0.02),
                   [p["lug_cx"], p["lug_cy"], -p["floor_t"] - 0.01]))
+    # light-pipe rod seat through the tray's west wall + SW corner — a
+    # wall-local cut would be refilled by the south tray wall's union
+    cuts.append(T(cyl_x(p["lp_tray_d"], 2.02),
+                  [p["tray_cx"] - p["tray_w"] / 2 - 0.01,
+                   p["lp_y"], p["lp_z"]]))
     # NFC tap window: fully OPEN over the antenna — best read range.
     # Through-cut from below, overshooting past the outer face.
     cuts.append(T(cyl(p["tap_win"], p["floor_t"] + 0.02),
@@ -374,6 +395,26 @@ def back_plate(p):
             cuts.append(T(cyl(3.2, p["floor_t"] + 0.01), [at[0], at[1], z0]))
             cuts.append(T(frustum(6.4, 3.2, 1.6), [at[0], at[1], z0]))
     return difference([body] + cuts)
+
+def desk_stand(p):
+    """Desk stand: device rests chin-down (lug + USB-C up), leaning back
+    ~10 deg — back face on the panel's top edge, bottom-back edge on the
+    base, front face caught by the lip's top-rear corner."""
+    base = T(rbox(p["stand_w"], p["stand_base_d"], p["stand_base_t"],
+                  p["stand_base_r"]),
+             [0, p["stand_front_y"] + p["stand_base_d"] / 2, 0])
+    panel = T(rbox(p["stand_w"], p["stand_panel_t"], p["stand_panel_h"],
+                   p["stand_panel_r"]),
+              [0, p["stand_panel_front"] + p["stand_panel_t"] / 2,
+               p["stand_base_t"]])
+    brace = T(cube(p["stand_w"], p["stand_brace_d"] + p["stand_brace_ov"],
+                   p["stand_brace_h"]),
+              [-p["stand_w"] / 2,
+               p["stand_panel_front"] - p["stand_brace_d"], p["stand_base_t"]])
+    lip = T(rbox(p["stand_w"], p["stand_lip_t"], p["stand_lip_h"],
+                 p["stand_lip_r"]),
+            [0, p["stand_lip_front"] + p["stand_lip_t"] / 2, p["stand_base_t"]])
+    return union([base, panel, brace, lip])
 
 def button_cap(p):
     head = cyl(p["cap_d"], p["cap_h"])
@@ -449,16 +490,18 @@ def check(mesh, name, bbox, vol_exp, tol, bodies=1):
           f"watertight {mesh.is_watertight}")
     return ok
 
-def verify(p, front, back, cap):
+def verify(p, front, back, cap, stand):
     ok = True
     print("geometry checks:")
     # the lanyard lug extends the west outline past the outer box
     bbox_w = p["outer_w"] / 2 + (-p["lug_cx"] + p["lug_w"] / 2)
+    # light-pipe bores shave pi r^2 h off each pin
     ok &= check(front, "front shell",
-                [bbox_w, p["outer_l"], p["outer_d"]], 46206.9, 0.02)
+                [bbox_w, p["outer_l"], p["outer_d"]],
+                46206.9 - math.pi * (p["lp_d"] / 2) ** 2 * p["wall"], 0.02)
     ok &= check(back, "back plate",
                 [bbox_w, p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                27425.8, 0.02)
+                27425.8 - math.pi * (p["lp_tray_d"] / 2) ** 2 * 2, 0.02)
     # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
     # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
     cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
@@ -472,6 +515,19 @@ def verify(p, front, back, cap):
                 [p["cap_d"], p["cap_d"],
                  p["cap_h"] + p["cap_skirt"] + p["cap_flange_t"] + p["cap_push"]],
                 cap_vol, 0.03)
+    def rbox_vol(w, l, h, r):
+        return w * l * h - (4 - math.pi) * r * r * h
+    stand_vol = (rbox_vol(p["stand_w"], p["stand_base_d"], p["stand_base_t"],
+                          p["stand_base_r"])
+                 + rbox_vol(p["stand_w"], p["stand_panel_t"], p["stand_panel_h"],
+                            p["stand_panel_r"])
+                 + p["stand_w"] * p["stand_brace_d"] * p["stand_brace_h"]
+                 + rbox_vol(p["stand_w"], p["stand_lip_t"], p["stand_lip_h"],
+                            p["stand_lip_r"]))
+    ok &= check(stand, "desk stand",
+                [p["stand_w"], p["stand_base_d"],
+                 p["stand_base_t"] + p["stand_panel_h"]],
+                stand_vol, 0.02)
 
     print("openness checks (perturbed rays — 0 hits means open):")
     fails = []
@@ -504,6 +560,10 @@ def verify(p, front, back, cap):
            "switch slot: east wall pierced, west solid (2 hits)")
     expect(len(ray_hits(front, [-60, p["chg_slot_y"], 3], [1, 0, 0])) == 2,
            "charge slot: west wall should be pierced, east solid (2 hits)")
+    # light pipe: the ray runs down the bore axis, so it slips through
+    # the hole and only the solid east wall stops it (2 hits)
+    expect(len(ray_hits(front, [-60, p["lp_y"], p["lp_z"]], [1, 0, 0])) == 2,
+           "light pipe: ray passes through the bore (2 hits)")
     expect(ray_hits(front, [p["lug_cx"], p["lug_cy"], 40], [0, 0, -1]) == [],
            "lanyard bore not open through the front tab")
     expect(len(ray_hits(front, [60, 0, 20], [-1, 0, 0])) == 4,
@@ -576,6 +636,8 @@ def verify(p, front, back, cap):
         ([bx, by, p["outer_d"] - p["brand_depth"] - 0.4], "solid"), # under engraving
         ([bx, by - 10, p["outer_d"] - 0.3], "solid"),         # face below wordmark
         ([-48, p["chg_slot_y"], 3], "void"),        # charge port channel
+        ([-48, p["lp_y"], p["lp_z"]], "void"),       # light-pipe bore
+        ([-48, p["lp_y"] - 1.75, p["lp_z"]], "solid"),  # wall south of it
         ([-48.5, bol_y, bol_z], "void"),            # bolt pixel engraving
         ([-48.5, bol_y, 5.5], "solid"),             # wall below the bolt
         ([p["lug_cx"], p["lug_cy"], 15], "void"),   # lanyard bore (front)
@@ -586,6 +648,8 @@ def verify(p, front, back, cap):
         ([p["kil_cx"], p["kil_cy"], -1.5], "void"),   # ..through the cradle too
         ([p["kil_cx"] + 17, p["kil_cy"], -0.3], "solid"),  # cradle annulus floor
         ([-45.5, p["chg_slot_y"], 2.5], "void"),    # tray wall notch (port)
+        ([-45.5, p["lp_y"], p["lp_z"]], "void"),    # light-pipe rod seat
+        ([-45.5, p["lp_y"], p["lp_z"] + 1.9], "solid"),  # wall above the bore
         ([-45.5, p["chg_slot_y"] + 7.5, 2.5], "solid"),   # wall stub beside
         ([p["lug_cx"], p["lug_cy"], -0.9], "void"),      # lanyard bore (back)
         ([p["lug_cx"], p["lug_cy"] + 3.5, -0.9], "solid"),  # tab material
@@ -630,6 +694,31 @@ def verify(p, front, back, cap):
         ([3.5, 0, -4.5], "void"),    # below the flange, off the pusher
         ([0, 0, -4.5], "solid"),     # pusher rod
     ])
+    # desk stand: cradle channel empty, stops solid. The device at the
+    # ~10 deg lean spans y ~10.4 (front face on the lip corner) to ~37.6
+    # (bottom-back edge) at the base, so probe the channel at y 14..34.
+    probe(stand, [
+        ([0, 55.2, 50], "solid"),    # back panel
+        ([0, 50, 50], "void"),       # cradle channel
+        ([0, 50, 20], "solid"),      # brace gusset
+        ([0, 42, 45], "void"),       # above the brace
+        ([0, 9.2, 10], "solid"),     # front lip
+        ([0, 12, 10], "void"),       # in front of the lip
+        ([0, 24, 10], "void"),       # cradle channel, low
+        ([0, 0, 1.2], "solid"),      # base scoop
+        ([0, 0, 5], "void"),         # above the scoop
+        ([60, 0, 1.2], "void"),      # beyond the base's east edge
+    ])
+    # cradle rays: looking down the channel only the base is in the way
+    # (top + bottom faces = 2 hits); fore-aft rays cross the lip (2 hits)
+    # and the fused brace+panel stop (2 hits) — the brace overlaps the
+    # panel by stand_brace_ov so the union leaves no coincident faces
+    expect(len(ray_hits(stand, [0, 24, 100], [0, 0, -1])) == 2,
+           "cradle floor open down to the base (2 hits)")
+    expect(len(ray_hits(stand, [0, -10, 30], [0, 1, 0])) == 2,
+           "brace + panel form one solid back stop (2 hits)")
+    expect(len(ray_hits(stand, [0, -10, 10], [0, 1, 0])) == 4,
+           "lip (2) + fused back stop (2) at low height (4 hits)")
     ok &= not fails
     print("  all feature checks passed" if not fails else
           f"  {len(fails)} FEATURE CHECKS FAILED")
@@ -658,7 +747,13 @@ def main():
             "halo_d", "halo_w", "halo_t",
             "chg_slot_y", "chg_slot_l", "chg_slot_z0", "chg_slot_z1",
             "bolt_px", "bolt_depth", "bolt_cy", "bolt_z0",
-            "lug_cx", "lug_cy", "lug_w", "lug_l", "lug_r", "lug_hole")
+            "lug_cx", "lug_cy", "lug_w", "lug_l", "lug_r", "lug_hole",
+            "lp_d", "lp_tray_d", "lp_y", "lp_z",
+            "stand_w", "stand_base_d", "stand_base_t", "stand_base_r",
+            "stand_front_y", "stand_panel_t", "stand_panel_h", "stand_panel_r",
+            "stand_brace_d", "stand_brace_h", "stand_brace_ov",
+            "stand_lip_t", "stand_lip_h", "stand_lip_r",
+            "stand_lip_front", "stand_panel_front")
     missing = [k for k in need if k not in p]
     if missing:
         sys.exit(f"parameters not parsed from {CAD}: {missing}")
@@ -670,10 +765,12 @@ def main():
         "opentag_front_shell.stl": front_shell(p),
         "opentag_back_plate.stl": back_plate(p),
         "opentag_button_cap.stl": button_cap(p),
+        "opentag_desk_stand.stl": desk_stand(p),
     }
     if not verify(p, parts["opentag_front_shell.stl"],
                   parts["opentag_back_plate.stl"],
-                  parts["opentag_button_cap.stl"]):
+                  parts["opentag_button_cap.stl"],
+                  parts["opentag_desk_stand.stl"]):
         sys.exit("verification failed — STL not written")
 
     print("assembly check: front/back closed-position interference")
