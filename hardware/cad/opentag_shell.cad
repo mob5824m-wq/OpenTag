@@ -157,6 +157,12 @@ brand_px    = 1.7;         // pixel size; cap height = 7 px = 11.9 mm
 brand_depth = 0.6;         // engraving depth into the outer face
 brand_cx = 0; brand_cy = 20;   // wordmark centre on the front face
 halo_d = 44.5; halo_w = 0.5; halo_t = 0.4;   // engraved ring around the cradle
+// wireless charging (optional): a Qi receiver coil (<= 40 mm, ferrite-
+// backed) sits on the back plate UNDER the battery, and an engraved ring
+// + bolt mark the pad spot. It lives east of the halo on purpose: metal
+// near the Killer's antenna costs read range.
+qi_ring_d = 44.5; qi_ring_w = 0.5; qi_ring_t = 0.4;  // locator ring, halo-style
+qi_bolt_px = 2.0; qi_bolt_depth = 0.6;               // 6x8 px bolt, centred
 
 brand_font = [
   ["A", [124, 18, 17, 18, 124]],
@@ -401,6 +407,21 @@ module back_plate() {
       translate([kil_cx, kil_cy, -floor_t - 0.02])
         cylinder(d = halo_d - 2*halo_w, h = halo_t + 0.03);
     }
+    // wireless-charge locator ring around the coil zone (under the battery)
+    difference() {
+      translate([bat_cx, bat_cy, -floor_t - 0.01])
+        cylinder(d = qi_ring_d, h = qi_ring_t + 0.01);
+      translate([bat_cx, bat_cy, -floor_t - 0.02])
+        cylinder(d = qi_ring_d - 2*qi_ring_w, h = qi_ring_t + 0.03);
+    }
+    // centred charge bolt: the same 6x8 pixel icon as the west-face
+    // engraving, 2 mm pixels, viewed from outside the back
+    for (c = [0:5], r = [0:7])
+      if (((bolt_cols[c]) >> r & 1) != 0)
+        translate([bat_cx + (2.5 - c)*qi_bolt_px - 0.01,
+                   bat_cy + (3.5 - r)*qi_bolt_px - 0.01,
+                   -floor_t - 0.01])
+          cube([qi_bolt_px + 0.02, qi_bolt_px + 0.02, qi_bolt_depth + 0.01]);
     // M3 screw holes, countersunk from the outside
     for (x = [-1, 1], y = [-1, 1])
       translate([x*screw_dx, y*screw_dy, 0]) {

@@ -39,6 +39,7 @@ command set from an on-board emulator slot, so the ESP32 only has to push a
 | NFC UART (Serial2, 115200 8N1) | TX J1-10 / GPIO17 → Killer RX; RX J1-11 / GPIO18 ← Killer TX |
 | Buttons (active-low) | UP J3-6 / GPIO42, DOWN J3-5 / GPIO2, OK J3-4 / GPIO1, BACK J1-19 / GPIO13 |
 | Power in | 5 V via J1-21 (after Schottky from the boost), 3V3 out at J1-1/2 for OLED + Killer |
+| Charge sense (optional) | TP4056 /CHRG (active low) via 22 kΩ → J3-18 / GPIO21; lights the on-screen charge bolt |
 
 Avoid on the S3: GPIO 0/3/45/46 (strapping), 19/20 (USB D−/D+), 26–32 (flash),
 35–37 (octal PSRAM), 43/44 (UART0). The pin choices above dodge all of them.
@@ -71,7 +72,11 @@ the amiibo library back to the menu.
 | Battery (3.7 V) | via MT3608 (≈85% eff.) | ~250 / 550 mA |
 
 An 805040 (~800 mAh) cell gives roughly 2–3 h of active emulation and days of
-standby-ish menu use. The TP4056 charges at up to 1 A over USB-C.
+standby-ish menu use. The TP4056 charges at up to 1 A over USB-C, and an
+optional Qi receiver coil (⌀ ≤ 40 mm, ferrite-backed) under the battery adds
+pad charging through the same charger — the engraved ring on the back marks
+the spot; a bolt icon shows on screen while charging (22 kΩ sense wire on
+GPIO21, optional).
 
 ## Bring-up order
 

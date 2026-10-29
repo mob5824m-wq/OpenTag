@@ -11,6 +11,7 @@ class Adafruit_GFX {
   void setCursor(int, int) {}
   void setTextWrap(bool) {}
   void drawFastHLine(int, int, int, uint16_t) {}
+  void drawPixel(int, int, uint16_t) {}
   template <typename T> void print(const T &) {}
   template <typename T> void print(const T &, int) {}
   template <typename T> void println(const T &) {}

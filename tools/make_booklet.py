@@ -279,6 +279,10 @@ def page_power(pdf):
         "to the outside face: glowing = charging, dark = full or unplugged.",
         "The optional printed desk stand leans the OpenTag back about ten "
         "degrees, charge port on top - it charges while docked.",
+        "Optional wireless charging: a Qi receiver coil inside the back "
+        "charges from any Qi pad - line the engraved ring on the back up "
+        "with the pad, and a small bolt icon appears at the top-right of "
+        "the screen while charging.",
         "Charge fully before first use. A full battery lasts many hours of "
         "emulation; the screen sleeps when the device is off.",
     ])
@@ -475,7 +479,11 @@ def page_help(pdf):
           "second to wake where you left off"],
          ["Won't wake",
           "Hold OK a full second; if truly dead, charge it, then check the "
-          "side power switch"]],
+          "side power switch"],
+         ["Qi pad not charging",
+          "Centre the pad on the engraved ring on the back; the bolt icon "
+          "on screen must appear - if not, reseat the pad or use another "
+          "one"]],
         [36, 84])
     pdf.tip("Charging but the LEDs look dark? Look at the port slot from "
             "an angle in dim light - the LEDs sit just inside, next to "

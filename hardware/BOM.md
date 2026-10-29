@@ -9,8 +9,10 @@
 | 3 | SSD1351 1.3" 128×128 OLED module, SPI, 7-pin | 1 | 3.3 V, GH1313-style header |
 | 4 | LiPo cell 805040 (3.7 V, ~800 mAh, with protection + JST-PH lead) | 1 | Any 3.7 V cell that fits the shell bay; adjust `bat_*` in the `.cad` |
 | 5 | TP4056 USB-C charging module **with protection** (DW01A + 8205A) | 1 | Must be the 6-pad version with B+/B−/OUT+/OUT− |
+| 5b | Qi receiver module, 5 V, ⌀ ≤ 40 mm ferrite-backed coil (optional) | 1 | Wireless charging: coil under the battery, see `WIRING.md` |
 | 6 | MT3608 boost module (adjustable) | 1 | Set to 5.0–5.1 V before installation |
-| 7 | 1N5819 Schottky diode (DO-41) | 1 | Series element on the boost output |
+| 7 | 1N5819 Schottky diode (DO-41) | 2 | One on the boost output; the second (optional) ORs the Qi receiver into the TP4056 input |
+| 7b | Resistor 22 kΩ (optional) | 1 | Charge-sense wire: TP4056 /CHRG → GPIO21, lights the on-screen bolt |
 | 8 | SPDT mini toggle switch, PCB mount, ≥1 A (MTS-102 style, 3 pins @ 2.54 mm) | 1 | Master battery cut. The firmware's "hold OK" soft-off is deep sleep, not a disconnect — the DevKitC's regulator and the boost still draw a few mA, so flip this switch for storage |
 
 ## PCB & wiring
@@ -45,7 +47,10 @@ later: an engraved `OPENTAG` wordmark on the front chin (below the buttons,
 using the same pixel font as the OLED and the PCB silkscreen) and an
 engraved halo ring around the NFC cradle marking the tap zone — both
 0.4–0.6 mm deep, so they survive handling and need no supports.
-The west wall carries the **charging port**: a slot over the tray's west
+The back plate's east side carries the **wireless-charge zone**: an engraved
+locator ring + bolt marks where the (optional) Qi receiver coil sits — flat
+on the plate, under the battery, deliberately on the far side of the bay
+from the Killer's antenna. The west wall carries the **charging port**: a slot over the tray's west
 end (the tray wall is notched behind it) so the TP4056's USB-C jack and
 charge LEDs are reachable with the case closed, marked by an engraved
 lightning bolt above the slot — charge the device on that side. Just south
@@ -81,4 +86,5 @@ supports: both halves print as drawn (front face-down, plate flat-side-down).
 | PCB (5 pcs from JLCPCB/PCBWay) | $5–10 |
 | Headers, connectors, hardware | $6–8 |
 | Filament | $3–5 |
+| Qi receiver + diode + resistor (optional) | $3–6 |
 | **Total** | **≈ $72–102** |

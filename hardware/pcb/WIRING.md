@@ -63,6 +63,31 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
    STDBY LEDs face the opening — charging then works with the case closed
    and the LEDs peek through the same slot. The MT3608 goes east of it.
 
+## Wireless charging (optional)
+
+A Qi receiver module makes the OpenTag charge on any Qi pad — no firmware
+change required (the TP4056 still runs the charge, so the port-slot LEDs and
+the light pipe behave exactly as over USB-C).
+
+```
+Qi receiver OUT+ ── D2 (anode→cathode) ── TP4056 VCC (USB-C jack VBUS)
+Qi receiver OUT─ ─────────────────────── GND
+TP4056 /CHRG (pin 7 = CHRG LED cathode) ── R2 22k ── J3-18 (GPIO21)
+```
+
+- Use a **5 V receiver** with a **⌀ ≤ 40 mm ferrite-backed coil** and bare
+  leads. Stick the coil flat on the back plate **under the battery**, on the
+  engraved-ring side (the ring + bolt on the outside mark the pad spot),
+  battery on top of the coil. Keep it east of the tap halo — metal near the
+  Killer's antenna costs read range.
+- D2 (a second 1N5819) stops the jack's 5 V from back-driving the receiver
+  when you charge over USB-C. With the pad alone the TP4056 sees ~4.6 V,
+  which is plenty for the ~0.5 A the small coil delivers.
+- The 22 kΩ sense wire (R2) is optional: with it, the firmware lights a
+  small bolt icon at the top-right of the screen while the TP4056 reports
+  charging — a quick "is the pad actually coupled?" check. An unwired
+  GPIO21 reads HIGH (no bolt) by design.
+
 ## Signals
 
 | Net | From | To | DevKit pin (GPIO) |
@@ -78,6 +103,7 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
 | OLED_RST | J1-12 (GPIO8) | OLED RES | 12 / 8 |
 | OLED_DC | J1-15 (GPIO9) | OLED DC | 15 / 9 |
 | OLED_CS | J1-16 (GPIO10) | OLED CS | 16 / 10 |
+| CHG_SENSE | TP4056 /CHRG (pin 7), via R2 22k | J3-18 (GPIO21) | 18 / 21 |
 | +3V3 | J1-1/2 | OLED VCC, Killer 3V3 | — |
 | +5V | J1-21 (via D1) | DevKit 5V pin | — |
 

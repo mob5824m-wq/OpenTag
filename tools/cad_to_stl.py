@@ -388,6 +388,21 @@ def back_plate(p):
                        T(cyl(p["halo_d"] - 2 * p["halo_w"], p["halo_t"] + 0.03),
                          [p["kil_cx"], p["kil_cy"], -p["floor_t"] - 0.02])])
     cuts.append(halo)
+    # wireless-charge locator ring around the coil zone (under the battery)
+    cuts.append(difference([
+        T(cyl(p["qi_ring_d"], p["qi_ring_t"] + 0.01),
+          [p["bat_cx"], p["bat_cy"], -p["floor_t"] - 0.01]),
+        T(cyl(p["qi_ring_d"] - 2 * p["qi_ring_w"], p["qi_ring_t"] + 0.03),
+          [p["bat_cx"], p["bat_cy"], -p["floor_t"] - 0.02])]))
+    # centred charge bolt (same pixel icon as the west-face engraving)
+    for c in range(6):
+        for r in range(8):
+            if (p["_bolt_cols"][c] >> r) & 1:
+                cuts.append(T(cube(p["qi_bolt_px"] + 0.02, p["qi_bolt_px"] + 0.02,
+                                   p["qi_bolt_depth"] + 0.01),
+                              [p["bat_cx"] + (2.5 - c) * p["qi_bolt_px"] - 0.01,
+                               p["bat_cy"] + (3.5 - r) * p["qi_bolt_px"] - 0.01,
+                               -p["floor_t"] - 0.01]))
     for x in (-1, 1):
         for y in (-1, 1):
             at = [x * p["screw_dx"], y * p["screw_dy"]]
@@ -495,13 +510,20 @@ def verify(p, front, back, cap, stand):
     print("geometry checks:")
     # the lanyard lug extends the west outline past the outer box
     bbox_w = p["outer_w"] / 2 + (-p["lug_cx"] + p["lug_w"] / 2)
-    # light-pipe bores shave pi r^2 h off each pin
+    # light-pipe bores shave pi r^2 h off each pin; the qi locator ring
+    # (annulus) and bolt pixels shave their volumes off the back plate
+    qi_cut = (math.pi * ((p["qi_ring_d"] / 2) ** 2
+                         - (p["qi_ring_d"] / 2 - p["qi_ring_w"]) ** 2)
+              * p["qi_ring_t"]
+              + sum(1 for col in p["_bolt_cols"] for r in range(8)
+                    if (col >> r) & 1)
+              * p["qi_bolt_px"] ** 2 * p["qi_bolt_depth"])
     ok &= check(front, "front shell",
                 [bbox_w, p["outer_l"], p["outer_d"]],
                 46206.9 - math.pi * (p["lp_d"] / 2) ** 2 * p["wall"], 0.02)
     ok &= check(back, "back plate",
                 [bbox_w, p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                27425.8 - math.pi * (p["lp_tray_d"] / 2) ** 2 * 2, 0.02)
+                27425.8 - math.pi * (p["lp_tray_d"] / 2) ** 2 * 2 - qi_cut, 0.02)
     # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
     # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
     cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
@@ -684,6 +706,16 @@ def verify(p, front, back, cap, stand):
           -p["floor_t"] + p["halo_t"] / 2], "solid"),      # plate beyond the halo
         ([p["kil_cx"] + halo_r, p["kil_cy"], -p["floor_t"] + p["halo_t"] + 0.1],
          "solid"),                                         # material over the groove
+        ([p["bat_cx"] + p["qi_ring_d"] / 2 - p["qi_ring_w"] / 2, p["bat_cy"],
+          -p["floor_t"] + p["qi_ring_t"] / 2], "void"),    # qi locator groove
+        ([p["bat_cx"] + p["qi_ring_d"] / 2 + 1.25, p["bat_cy"],
+          -p["floor_t"] + p["qi_ring_t"] / 2], "solid"),   # plate beyond the ring
+        ([p["bat_cx"] + 0.5 * p["qi_bolt_px"] + p["qi_bolt_px"] / 2,
+          p["bat_cy"] + 0.5 * p["qi_bolt_px"] + p["qi_bolt_px"] / 2,
+          -p["floor_t"] + p["qi_bolt_depth"] / 2], "void"),    # qi bolt pixel
+        ([p["bat_cx"] + 0.5 * p["qi_bolt_px"] + p["qi_bolt_px"] / 2,
+          p["bat_cy"] + 0.5 * p["qi_bolt_px"] + p["qi_bolt_px"] / 2,
+          -p["floor_t"] + p["qi_bolt_depth"] + 0.1], "solid"),  # under the bolt
     ])
     probe(cap, [
         ([0, 0, 1.1], "solid"),      # head
@@ -749,6 +781,8 @@ def main():
             "bolt_px", "bolt_depth", "bolt_cy", "bolt_z0",
             "lug_cx", "lug_cy", "lug_w", "lug_l", "lug_r", "lug_hole",
             "lp_d", "lp_tray_d", "lp_y", "lp_z",
+            "qi_ring_d", "qi_ring_w", "qi_ring_t",
+            "qi_bolt_px", "qi_bolt_depth",
             "stand_w", "stand_base_d", "stand_base_t", "stand_base_r",
             "stand_front_y", "stand_panel_t", "stand_panel_h", "stand_panel_r",
             "stand_brace_d", "stand_brace_h", "stand_brace_ov",

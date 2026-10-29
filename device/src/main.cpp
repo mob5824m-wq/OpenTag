@@ -54,6 +54,9 @@ extern "C" void otHmacSha256(const uint8_t *key, size_t keyLen,
 //     with a fresh random UID (amiitool crypto) on every emulation.
 //   * Soft power (hold OK at the menu) plus a 3-minute auto-sleep; both
 //     wake with a held OK.
+//   * Charge indicator: the TP4056's /CHRG line (GPIO21, optional 22k
+//     sense wire) lights a bolt icon in the header while charging - wired
+//     USB-C or an optional Qi receiver coil inside the back plate.
 //   * Four-button UI: UP/DOWN navigate, OK selects, BACK cancels or exits
 //     (BACK = GPIO13 on J1-19, the repurposed SPI MISO pin).
 //   * BLE service with a text command channel and a binary chunk channel.
@@ -67,6 +70,10 @@ constexpr int NFC_TX = 17, NFC_RX = 18;  // ESP32 TX -> Killer J4 RX
 // BACK sits on J1-19 = GPIO13, the SPI MISO pin: the OLED bus is write-only,
 // so MISO is unused and the pin is repurposed as a button input instead.
 constexpr int BUTTON_UP = 42, BUTTON_DOWN = 2, BUTTON_OK = 1, BUTTON_BACK = 13;
+// Charge sense (optional): TP4056 /CHRG is open-drain, active low while
+// charging. A 22k series resistor keeps the pin between 0 and ~3.3 V, and
+// the internal pullup makes an unwired pin read HIGH (not charging).
+constexpr int CHG_SENSE = 21;   // J3-18
 }
 
 namespace BleIds {
@@ -99,6 +106,11 @@ static bool waitingForTag = false;
 static bool tagReady = false;
 static uint8_t menuIndex = 0;
 static String uiMessage;
+
+// Charge sense state (debounced in loop()). True = TP4056 reporting charge.
+static bool charging = false;
+static uint8_t chgDebounce = 0;
+static uint32_t chgPollMs = 0;
 
 // ---- BLE command mailbox (consumed in loop()) ----
 static char bleCommand[248] = {0};
@@ -774,6 +786,17 @@ void drawScreen(bool force = false) {
     if (uiMessage.length()) {
       oled.setTextColor(LAVENDER); oled.setCursor(8, 108); oled.print(uiMessage.substring(0, 19));
     }
+  }
+
+  // Charge bolt, top-right: lit while the TP4056 reports charging (USB-C
+  // or the optional Qi coil). Same 6x8 pixel icon as the west-face
+  // engraving (bolt_cols in the shell CAD).
+  if (charging && uiState != UI_POWEROFF) {
+    static const uint8_t kBoltCols[6] = {0, 136, 76, 110, 59, 25};
+    for (int c = 0; c < 6; ++c)
+      for (int r = 0; r < 8; ++r)
+        if ((kBoltCols[c] >> r) & 1)
+          oled.drawPixel(121 + c, 2 + r, MINT);
   }
 }
 
@@ -1580,6 +1603,7 @@ void setup() {
   pinMode(Pins::BUTTON_DOWN, INPUT_PULLUP);
   pinMode(Pins::BUTTON_OK, INPUT_PULLUP);
   pinMode(Pins::BUTTON_BACK, INPUT_PULLUP);
+  pinMode(Pins::CHG_SENSE, INPUT_PULLUP);   // unwired reads HIGH = no bolt
   noteActivity();   // start the auto-sleep clock at boot
   travelMode = prefs.getBool("travel", false);
 
@@ -1627,6 +1651,23 @@ void loop() {
   if (uiState != UI_POWEROFF && millis() - lastActivityMs > kAutoSleepMs) {
     powerOffFromMenu();
     return;
+  }
+
+  // Charge sense: two matching 250 ms samples flip the displayed state.
+  // Rising edge announces itself at the menu/library message line.
+  if (millis() - chgPollMs >= 250) {
+    chgPollMs = millis();
+    const bool nowCharging = digitalRead(Pins::CHG_SENSE) == LOW;
+    if (nowCharging != charging) {
+      if (++chgDebounce >= 2) {
+        chgDebounce = 0;
+        charging = nowCharging;
+        if (charging) uiMessage = "Charging";
+        if (uiState != UI_POWEROFF) drawScreen(true);
+      }
+    } else {
+      chgDebounce = 0;
+    }
   }
 
   handleButtons();

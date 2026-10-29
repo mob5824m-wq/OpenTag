@@ -54,6 +54,7 @@
     <div class="row">BLE connected <input type="checkbox" id="simBle" checked></div>
     <div class="row">PN532Killer present <input type="checkbox" id="simNfc" checked></div>
     <div class="row">Keys loaded <input type="checkbox" id="simKeys"></div>
+    <div class="row">Charging (USB-C / Qi) <input type="checkbox" id="simCharging"></div>
     <div class="row"><input type="text" id="simNote" value="Hello from OpenTag" maxlength="40"> <button id="setNote">Set pending note</button></div>
     <div class="row">
       <button id="simTap">Simulate: tap NTAG215</button>
@@ -161,7 +162,7 @@
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
   let poweredOff = false, powerOffTimer = null;
   // travel mode (BLE off), factory-reset confirm clock, backup UID counter
-  let travelMode = false, factoryAskedAt = 0, backupUid = 0;
+  let travelMode = false, factoryAskedAt = 0, backupUid = 0, charging = false;
   // auto-sleep: 3 minutes with no interaction (any draw = activity, which
   // mirrors the firmware's button/BLE/tag activity resets)
   const AUTO_SLEEP_MS = 3 * 60 * 1000;
@@ -283,6 +284,16 @@
       if (pendingPresent) { print(pendingKind); print(': '); print(String(pendingValue).substring(0, 12)); }
       else print('Hold OK: power off');
       if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
+    }
+    // charge bolt, top-right: lit while the TP4056 reports charging
+    // (USB-C or the optional Qi coil) - the same 6x8 pixel icon as the
+    // west-face engraving (bolt_cols in the shell CAD)
+    if (charging && uiState !== UI.POWEROFF) {
+      const BOLT = [0, 136, 76, 110, 59, 25];
+      ctx.fillStyle = C.MINT;
+      for (let c = 0; c < 6; c++)
+        for (let r = 0; r < 8; r++)
+          if ((BOLT[c] >> r) & 1) ctx.fillRect(121 + c, 2 + r, 1, 1);
     }
     setStatus(null);
   }
@@ -527,6 +538,11 @@
   document.getElementById('simBle').onchange = e => { bleConnected = e.target.checked; drawScreen(); };
   document.getElementById('simNfc').onchange = e => { nfcReady = e.target.checked; drawScreen(); };
   document.getElementById('simKeys').onchange = e => { keysReady = e.target.checked; drawScreen(); };
+  document.getElementById('simCharging').onchange = e => {
+    charging = e.target.checked;
+    if (charging) uiMessage = 'Charging';   // rising edge announces itself
+    drawScreen();
+  };
   document.getElementById('setNote').onclick = () => {
     const v = document.getElementById('simNote').value;
     pendingValue = v; pendingKind = 'TEXT'; pendingPresent = v.length > 0;

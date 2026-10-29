@@ -26,6 +26,10 @@ guide, and parts list.
   (no dependencies) for BLE file dumping: pick `.bin` dumps or a `.zip` of
   them, upload to the device, browse the on-device library, and trigger
   emulation.
+- **Wireless charging (optional)** — a Qi receiver coil inside the back
+  plate charges the OpenTag from any Qi pad through the existing TP4056
+  (an engraved ring on the back marks the spot); with the optional charge
+  -sense wire, a bolt icon on the OLED confirms the pad is coupled.
 - **Tag backup (reader mode)** — from the device menu, tap any amiibo
   against the back window and the firmware reads, validates, and stores the
   dump in the library (named by the tag's UID; full 1024-byte images for
@@ -270,7 +274,11 @@ face, so charging is visible with the case closed even in bright rooms. The
 optional printed **desk stand**
 ([`hardware/cad/stl/opentag_desk_stand.stl`](hardware/cad/stl/opentag_desk_stand.stl))
 holds the OpenTag leaning back at ~10°, chin down — the charge port and
-lanyard lug end up on top, so it charges while docked. Soft-off still draws a few mA
+lanyard lug end up on top, so it charges while docked. **Wireless:** with
+the optional Qi receiver coil fitted (see `hardware/pcb/WIRING.md` — it sits
+under the battery on the engraved ring, east of the tap halo), any Qi pad
+charges the device through the same TP4056, and the bolt icon at the
+top-right of the screen confirms the pad is coupled. Soft-off still draws a few mA
 (the DevKitC regulator and boost stay alive), so use the side switch when
 storing the device.
 
@@ -338,6 +346,10 @@ browser with [`device/web-preview/index.html`](device/web-preview/index.html).
   this repository. Uploaded keys live in the device's NVS (not encrypted at
   rest — the device is assumed personal, like a phone running TagMo).
 - The NDEF-note emulation personality uses a random, persisted 7-byte UID.
+- **Wireless charging is a hardware option**: a ⌀ ≤ 40 mm ferrite-backed Qi
+  receiver coil (under the battery, on the engraved ring) feeds the TP4056
+  through a second Schottky — see `hardware/pcb/WIRING.md`. No firmware
+  change needed; the optional 22 kΩ sense wire (GPIO21) lights the bolt.
 - `device/HARDWARE.md` documents the interface baseline; the PCB is
   self-checked by its generator but has not been manufactured in this repo —
   review it in KiCad before ordering.
