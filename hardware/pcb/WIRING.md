@@ -39,7 +39,10 @@ which self-checks connectivity and clearance before writing the file) is a
 ## Power chain (verify each stage before connecting the next!)
 
 ```
-LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charging, USB-C in)
+LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charging, USB-C in —
+                                                        through the bolt-marked
+                                                        charge port on the west
+                                                        wall of the shell)
                     │
         TP4056 OUT+ ─┴─ SW_PWR (pads 1→2) ── J_BOOST IN+
         TP4056 OUT─ ─── GND ─────────────── J_BOOST IN─
@@ -54,6 +57,11 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
    leads vary between vendors.
 3. The TP4056 and MT3608 modules connect with four wires each; their pads are
    SMD edge pads on the modules (solder wires or pin headers to them).
+4. Seat the TP4056 at the **west end** of the shell's power tray, USB-C jack
+   first through the notched wall, so the jack lines up with the charge-port
+   slot (marked by the engraved lightning bolt on the outside) and its CHG /
+   STDBY LEDs face the opening — charging then works with the case closed
+   and the LEDs peek through the same slot. The MT3608 goes east of it.
 
 ## Signals
 

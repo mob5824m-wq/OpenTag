@@ -45,6 +45,10 @@ later: an engraved `OPENTAG` wordmark on the front chin (below the buttons,
 using the same pixel font as the OLED and the PCB silkscreen) and an
 engraved halo ring around the NFC cradle marking the tap zone — both
 0.4–0.6 mm deep, so they survive handling and need no supports.
+The west wall carries the **charging port**: a slot over the tray's west
+end (the tray wall is notched behind it) so the TP4056's USB-C jack and
+charge LEDs are reachable with the case closed, marked by an engraved
+lightning bolt above the slot — charge the device on that side.
 Cutouts are placed so nothing needs
 supports: both halves print as drawn (front face-down, plate flat-side-down).
 

@@ -146,6 +146,15 @@ def parse_brand(path):
     return text, font
 
 
+def parse_bolt(path):
+    """Lightning-bolt column bytes straight from the .cad (single source of
+    truth): bolt_cols = [8, 136, ...]; bit 0 = top row, 6 columns x 8 rows."""
+    import ast
+    src = path.read_text()
+    m = re.search(r"bolt_cols\s*=\s*(\[.*?\]);", src, re.S)
+    return ast.literal_eval(m.group(1)) if m else []
+
+
 def brand_boxes(p):
     """Engraved wordmark pixel boxes, mirroring the .cad's brand_mark():
     laid out in upright text space then rotated 180 deg about the wordmark
@@ -177,6 +186,27 @@ def brand_boxes(p):
 # ---------------------------------------------------------------------------
 # Geometry mirror of opentag_shell.cad
 # ---------------------------------------------------------------------------
+
+def bolt_boxes(p):
+    """Engraved lightning-bolt pixel boxes, mirroring the .cad's
+    bolt_mark(): west face above the charge slot, engraved bolt_depth into
+    the outer wall. Viewed from the west face (up = +z, right = -y), so
+    column c sits at y = bolt_cy + (2.5 - c) * px and row r (0 = top) at
+    z = bolt_z0 + (7 - r) * px. Same 0.02 mm diagonal overlap as the
+    wordmark."""
+    px, dep = p["bolt_px"], p["bolt_depth"]
+    cols = p["_bolt_cols"]
+    eps = 0.02
+    boxes = []
+    for c in range(6):
+        for r in range(8):
+            if (cols[c] >> r) & 1:
+                boxes.append(T(cube(dep + 0.01, px + eps, px + eps),
+                               [-p["outer_w"] / 2 - 0.01,
+                                p["bolt_cy"] + (2.5 - c) * px - eps / 2,
+                                p["bolt_z0"] + (7 - r) * px - eps / 2]))
+    return boxes
+
 
 def front_shell(p):
     outer = rbox(p["outer_w"], p["outer_l"], p["outer_d"], p["corner"])
@@ -216,9 +246,12 @@ def front_shell(p):
                                     p["usb_slot_z0"], p["usb_slot_z1"], west=True)
     sw_thru, sw_plug = wall_slot(p["sw_slot_y"], p["sw_slot_l"],
                                   p["sw_slot_z0"], p["sw_slot_z1"], west=False)
+    chg_thru, chg_plug = wall_slot(p["chg_slot_y"], p["chg_slot_l"],
+                                    p["chg_slot_z0"], p["chg_slot_z1"], west=True)
     shell = union([difference([outer, inner, oled] + btns
-                              + [usb_thru, sw_thru] + brand_boxes(p)),
-                   usb_plug, sw_plug])
+                              + [usb_thru, sw_thru, chg_thru]
+                              + brand_boxes(p) + bolt_boxes(p)),
+                   usb_plug, sw_plug, chg_plug])
     # OLED side rails (fused +0.02 into the face, see .cad)
     rails = [T(cube(1.6, 34.5, p["inner_d"] - p["oled_top"] + 0.02),
                [p["oled_cx"] + sx * (37.5 / 2 + 0.8) - 0.8,
@@ -286,8 +319,12 @@ def back_plate(p):
              [p["bat_cx"] - p["bat_w"] / 2 - 3, p["bat_cy"] + p["bat_l"] / 2, 0])
     # power module tray (walls + two tie-down bars)
     tx, ty = p["tray_cx"] - p["tray_w"] / 2, p["tray_cy"] - p["tray_d"] / 2
-    tray = [T(cube(2, p["tray_d"], 5), [tx + mx * (p["tray_w"] - 2), ty, 0])
-            for mx in (0, 1)]
+    tray = [T(cube(2, p["tray_d"], 5), [tx + (p["tray_w"] - 2), ty, 0])]  # east
+    # west wall notched behind the charge port (TP4056 USB-C + LEDs)
+    tray += [difference([T(cube(2, p["tray_d"], 5), [tx, ty, 0]),
+                         T(cube(2.02, p["chg_slot_l"], 5.02),
+                           [tx - 0.01, p["chg_slot_y"] - p["chg_slot_l"] / 2,
+                            -0.01])])]
     tray += [T(cube(p["tray_w"], 2, 5), [tx, ty + my * (p["tray_d"] - 2), 0])
              for my in (0, 1)]
     tray += [T(cube(p["tray_w"] - 14, 2.6, 2.02), [tx + 7, ty + yy, -0.01])
@@ -403,10 +440,10 @@ def verify(p, front, back, cap):
     ok = True
     print("geometry checks:")
     ok &= check(front, "front shell",
-                [p["outer_w"], p["outer_l"], p["outer_d"]], 44421, 0.02)
+                [p["outer_w"], p["outer_l"], p["outer_d"]], 44325.6, 0.02)
     ok &= check(back, "back plate",
                 [p["outer_w"], p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                27430, 0.02)
+                27310.2, 0.02)
     # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
     # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
     cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
@@ -450,6 +487,8 @@ def verify(p, front, back, cap):
            "away from USB slot both walls solid (4 hits)")
     expect(len(ray_hits(front, [60, p["sw_slot_y"], 20], [-1, 0, 0])) == 2,
            "switch slot: east wall pierced, west solid (2 hits)")
+    expect(len(ray_hits(front, [-60, p["chg_slot_y"], 3], [1, 0, 0])) == 2,
+           "charge slot: west wall should be pierced, east solid (2 hits)")
     expect(len(ray_hits(front, [60, 0, 20], [-1, 0, 0])) == 4,
            "away from switch slot both walls solid (4 hits)")
     for x in (-1, 1):
@@ -500,6 +539,9 @@ def verify(p, front, back, cap):
     bx = p["brand_cx"] + bw / 2 - (bi * 6 + bc) * bpx - bpx / 2
     by = p["brand_cy"] + 4 * bpx - (6 - br) * bpx - bpx / 2
     halo_r = p["halo_d"] / 2 - p["halo_w"] / 2   # groove centreline radius
+    # bolt pixel (col 4, row 1) centre, mirroring bolt_boxes()
+    bol_y = p["bolt_cy"] + (2.5 - 4) * p["bolt_px"]
+    bol_z = p["bolt_z0"] + (7 - 1) * p["bolt_px"] + p["bolt_px"] / 2
 
     probe(front, [
         ([-48, p["usb_slot_y"], 3], "void"),          # USB slot channel
@@ -516,11 +558,16 @@ def verify(p, front, back, cap):
         ([bx, by, p["outer_d"] - p["brand_depth"] / 2], "void"),   # wordmark pixel
         ([bx, by, p["outer_d"] - p["brand_depth"] - 0.4], "solid"), # under engraving
         ([bx, by - 10, p["outer_d"] - 0.3], "solid"),         # face below wordmark
+        ([-48, p["chg_slot_y"], 3], "void"),        # charge port channel
+        ([-48.5, bol_y, bol_z], "void"),            # bolt pixel engraving
+        ([-48.5, bol_y, 5.5], "solid"),             # wall below the bolt
     ])
     probe(back, [
         ([p["kil_cx"], p["kil_cy"], -0.5], "void"),   # tap window open
         ([p["kil_cx"], p["kil_cy"], -1.5], "void"),   # ..through the cradle too
         ([p["kil_cx"] + 17, p["kil_cy"], -0.3], "solid"),  # cradle annulus floor
+        ([-45.5, p["chg_slot_y"], 2.5], "void"),    # tray wall notch (port)
+        ([-45.5, p["chg_slot_y"] + 7.5, 2.5], "solid"),   # wall stub beside
         ([p["kil_cx"] + 17, p["kil_cy"], -1.0], "void"),   # cradle recess
         ([p["kil_cx"], p["kil_cy"] + 16.8, 1.2], "solid"), # north anti-slide nub
         ([p["kil_cx"] + 21.8, p["kil_cy"], 1.2], "solid"), # east anti-slide nub
@@ -572,6 +619,7 @@ def verify(p, front, back, cap):
 def main():
     p = parse_params(CAD)
     p["_brand_text"], p["_brand_font"] = parse_brand(CAD)
+    p["_bolt_cols"] = parse_bolt(CAD)
     need = ("outer_w", "outer_l", "outer_d", "inner_w", "inner_l", "inner_d",
             "wall", "floor_t", "corner", "oled_cx", "oled_cy", "oled_win_w",
             "oled_win_l", "oled_win_r", "oled_bezel", "oled_top", "btn_dx",
@@ -586,7 +634,9 @@ def main():
             "cap_proud", "cap_skirt_o", "cap_skirt",
             "cap_flange_d", "cap_flange_t", "cap_push", "cap_push_d",
             "brand_px", "brand_depth", "brand_cx", "brand_cy",
-            "halo_d", "halo_w", "halo_t")
+            "halo_d", "halo_w", "halo_t",
+            "chg_slot_y", "chg_slot_l", "chg_slot_z0", "chg_slot_z1",
+            "bolt_px", "bolt_depth", "bolt_cy", "bolt_z0")
     missing = [k for k in need if k not in p]
     if missing:
         sys.exit(f"parameters not parsed from {CAD}: {missing}")

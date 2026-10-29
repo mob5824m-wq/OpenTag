@@ -98,6 +98,14 @@ bat_cx = 23; bat_cy = bay_y0 + 30;  // west edge 2.7 clears the bay posts, heel 
 tray_cx = -23; tray_cy = bay_y0 + 45.5; tray_w = 47; tray_d = 18;
 vent_l = 26; vent_w = 4.2;      // charger/boost vent through the plate,
                                 // centred between the tie-down bars
+// charging port + indicator, west wall over the tray's west end: the
+// TP4056 seats USB-C-west and its charge LEDs peek through the same slot
+// (the tray's west wall is notched behind it — see back_plate()).
+chg_slot_y = tray_cy;            // centred on the TP4056's USB-C
+chg_slot_l = 12; chg_slot_z0 = 0.5; chg_slot_z1 = 4.5;
+bolt_px = 1.0; bolt_depth = 0.6; // engraved lightning bolt, 6 x 8 px
+bolt_cy = chg_slot_y; bolt_z0 = 6;
+bolt_cols = [0, 136, 76, 110, 59, 25];  // column bytes, bit 0 = top row
 
 // ---- back-plate cutouts / supports ------------------------------------------------
 svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
@@ -185,6 +193,21 @@ module brand_mark() {
   }
 }
 
+// Engraved lightning bolt on the west face above the charge port — the
+// "charge here" marking. Laid out for a viewer looking at the west face
+// (up = +z, right = -y), engraved bolt_depth into the outer wall. Pixels
+// are inflated by 0.02 mm like the wordmark so diagonal contacts overlap
+// instead of pinching the surface.
+module bolt_mark() {
+  for (c = [0 : 5])
+    for (r = [0 : 7])
+      if (((bolt_cols[c]) >> r & 1) != 0)
+        translate([-outer_w/2 - 0.01,
+                   bolt_cy + (2.5 - c) * bolt_px - 0.01,
+                   bolt_z0 + (7 - r) * bolt_px - 0.01])
+          cube([bolt_depth + 0.01, bolt_px + 0.02, bolt_px + 0.02]);
+}
+
 // ---------------------------------------------------------------------------
 // FRONT SHELL (prints face-down)
 // ---------------------------------------------------------------------------
@@ -209,8 +232,13 @@ module front_shell() {
     // power switch slot, right wall
     translate([inner_w/2 - 0.01, sw_slot_y - sw_slot_l/2, sw_slot_z0])
       cube([wall + 0.02, sw_slot_l, sw_slot_z1 - sw_slot_z0]);
+    // charge port + charge-LED window, left wall over the power tray
+    translate([-outer_w/2 - 0.01, chg_slot_y - chg_slot_l/2, chg_slot_z0])
+      cube([wall + 0.02, chg_slot_l, chg_slot_z1 - chg_slot_z0]);
     // engraved wordmark on the chin (cut from the outer face inward)
     translate([0, 0, outer_d - brand_depth]) brand_mark();
+    // engraved lightning bolt on the west face above the charge port
+    bolt_mark();
   }
   // OLED side rails: clamp the module against the carrier socket. The
   // +0.02 fuses the rail tops into the face — an exact-height rail ends
@@ -288,7 +316,15 @@ module back_plate() {
         cube([bat_w - 1, 3, 5]);
       // power module tray with zip-tie slots
       translate([tray_cx - tray_w/2, tray_cy - tray_d/2, 0]) {
-        for (mx = [0, 1]) translate([mx*(tray_w - 2), 0, 0]) cube([2, tray_d, 5]);
+        // west wall notched behind the charge port so the TP4056's USB-C
+        // and charge LEDs reach the shell slot (the mx = 0 side)
+        difference() {
+          cube([2, tray_d, 5]);
+          translate([-0.01,
+                     chg_slot_y - tray_cy + tray_d/2 - chg_slot_l/2, -0.01])
+            cube([2.02, chg_slot_l, 5.02]);
+        }
+        translate([tray_w - 2, 0, 0]) cube([2, tray_d, 5]);
         for (my = [0, 1]) translate([0, my*(tray_d - 2), 0]) cube([tray_w, 2, 5]);
         for (yy = [3.5, tray_d - 6])
           translate([7, yy, -0.01]) cube([tray_w - 14, 2.6, 2.02]);

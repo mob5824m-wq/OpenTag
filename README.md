@@ -112,7 +112,8 @@ files. Emulation needs neither.
    shell, back plate, 4 button caps (PLA/PETG, no supports needed).
 3. **Assemble** per [`hardware/pcb/WIRING.md`](hardware/pcb/WIRING.md);
    parts and budget in [`hardware/BOM.md`](hardware/BOM.md) (≈ $72–102
-   complete).
+   complete). Print [`docs/opentag-user-guide.pdf`](docs/opentag-user-guide.pdf)
+   as the user manual.
 4. The device is identical to the bench build — continue from step 5 in
    path **B**.
 
@@ -135,10 +136,12 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/gerbers/` | Fab-ready Gerber set + Excellon drill + `opentag-gerbers.zip` — the generator writes them and re-parses them to verify against the model |
 | `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
-| `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps (OpenSCAD source; `.cad` is the project's extension) |
+| `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps, with the ⚡-marked USB-C charge port on the west wall (OpenSCAD source; `.cad` is the project's extension) |
 | `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |
 | `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
 | `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
+| `docs/opentag-user-guide.pdf` | The printed instruction booklet — 10 A5 pages covering charging, buttons, the library, V3 amiibo, writes and troubleshooting |
+| `tools/make_booklet.py` | Regenerates the booklet (`pip install fpdf2`); its cover art is parsed straight from the shell's own wordmark font and bolt icon |
 
 ## Updating the firmware (keeps your amiibos)
 
@@ -251,6 +254,14 @@ portable C++ from the MIT-licensed amiitool reference:
 
 Trigger it with `AMI:WRITE:<name>` over BLE or by long-pressing OK on a
 library entry.
+
+## Charging
+
+Charge through the **USB-C port on the left side**, marked by the engraved
+lightning bolt — the TP4056's charge LEDs peek through the same slot, so
+charging is visible with the case closed. Soft-off still draws a few mA
+(the DevKitC regulator and boost stay alive), so use the side switch when
+storing the device.
 
 ## Device menu
 
