@@ -177,6 +177,20 @@ class Pn532Uart {
     return killerWriteEmulatorDone(type, slot);
   }
 
+  // v3 amiibo (Air Riders generation, NTAG I2C Plus 2K personality): loads
+  // pages 0x00-0xFF — everything the tag presents without a sector select.
+  // Best effort by design: the Killer's documented profiles are NTAG213/215/
+  // 216, so firmware that rejects pages past the NTAG215 range fails here
+  // (returning false) and the UI reports that this build can't do v3 tags.
+  bool killerLoadNtagImageV3(uint8_t slot, const uint8_t image[1024]) {
+    for (size_t page = 0; page < 256; page++) {
+      if (!killerWriteEmulatorPage(KILLER_TAG_NTAG_MFU, slot, (uint8_t)page,
+                                   &image[page * 4]))
+        return false;
+    }
+    return killerWriteEmulatorDone(KILLER_TAG_NTAG_MFU, slot);
+  }
+
   // --- plumbing -----------------------------------------------------------
 
   // Flushes the input and probes for a live PN532/Killer a few times.

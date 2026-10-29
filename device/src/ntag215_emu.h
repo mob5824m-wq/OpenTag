@@ -91,6 +91,40 @@ inline void normalizeDump(const uint8_t *dump, size_t len, uint8_t out[kImageByt
   memcpy(out, dump, n);
 }
 
+// ---- v3 amiibo (Kirby Air Riders generation) -------------------------------
+// The Air Riders figures are "amiibo v3" on NTAG I2C Plus 2K tags: same
+// NXP/NFC Forum Type 2 command set, but a different memory map (64 extra
+// bytes at 0x80, the encrypted block shifted to 0xA0, config pages 0xE2-0xE6
+// and an SRAM buffer at 0xF0-0xFF). Research: N3evin/AmiiboAPI issue #243
+// (xSke's teardown). Emulators work from a "dumb dump": the SRAM response
+// pre-loaded at 0xF0-0xFF and page 0xED's NS_RED already in the ready state,
+// which is what the dumps circulating in collections look like.
+// Pages 0x00-0xFF (1024 bytes) cover everything reachable without a sector
+// select; the trailing figure-ID byte is the format version (0x02 = v2,
+// 0x03 = v3). Real rips carry whatever BCC their tag has, so only the
+// vendor byte and the v3 marker are checked.
+static const size_t kV3PageCount = 256;
+static const size_t kV3ImageBytes = kV3PageCount * kPageSize;  // 1024
+inline bool validateV3Dump(const uint8_t *dump, size_t len, const char **why = nullptr) {
+  static const char *kTooShort = "short";
+  static const char *kNotV3 = "v3";
+  static const char *kVendor = "vendor";
+  if (why) *why = nullptr;
+  if (len < kV3ImageBytes) {
+    if (why) *why = kTooShort;
+    return false;
+  }
+  if (dump[0] != 0x04) {  // NXP manufacturer ID
+    if (why) *why = kVendor;
+    return false;
+  }
+  if (dump[0x5B] != 0x03) {  // figure ID (pages 0x15-0x16) format byte
+    if (why) *why = kNotV3;
+    return false;
+  }
+  return true;
+}
+
 // Builds a read-only NDEF presentation image: the given 7-byte UID, an
 // NTAG215 CC, the NDEF Message TLV in the user area and an unprotected
 // configuration (AUTH0 = 0xFF). `tlv` comes from makeNdefTlv() (ndef_tlv.h).

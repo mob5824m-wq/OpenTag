@@ -147,8 +147,13 @@
   let uiState = UI.MENU, menuIndex = 0, uiMessage = '';
   let pendingPresent = true, pendingKind = 'TEXT', pendingValue = 'Hello from OpenTag';
   let bleConnected = true, nfcReady = true, keysReady = false;
-  let amiiboNames = ['mario.bin', 'zelda.bin', 'kirby.bin'];
-  let amiCount = 3, amiSelected = 0, amiTop = 0;
+  let amiiboNames = ['mario.bin', 'zelda.bin', 'kirby.bin',
+                     'Allycomplete(Air Riders).bin', 'Allycomplete942.bin'];
+  // v3 (Air Riders generation) dumps are 1024-byte page images; the library
+  // flags them so the UI can badge them and refuse physical writes.
+  let amiV3 = [false, false, false, true, false];
+  let amiCount = 5, amiSelected = 0, amiTop = 0;
+  let emuV3 = false;
   let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
   let poweredOff = false, powerOffTimer = null;
@@ -156,6 +161,16 @@
   const offNote = document.getElementById('offNote');
   const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF'];
   function setStatus(t) { statusline.textContent = 'UI state: ' + stateNames[uiState] + (t ? ' — ' + t : ''); }
+
+  // Library display name (mirror of formatAmiiboName in main.cpp): strips
+  // ".bin", turns - _ . into spaces, capitalizes the first letter of every
+  // word. Only the display changes; files keep their real names.
+  function formatName(n) {
+    let base = n.replace(/\.bin$/i, '');
+    base = base.replace(/[-_.]/g, ' ').replace(/\s+/g, ' ');
+    return base.split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ')
+               .replace(/\( /g, '(').trim();
+  }
 
   // ---- drawScreen port ------------------------------------------------------
   function drawHeader() {
@@ -192,17 +207,19 @@
           const idx = amiTop + i, y = 34 + i * 14;
           setTextColor(idx === amiSelected ? C.MINT : C.MUTED);
           setCursor(8, y); print(idx === amiSelected ? '> ' : '  ');
-          print(String(amiiboNames[idx]).substring(0, 16));
+          print(formatName(amiiboNames[idx]).substring(0, amiV3[idx] ? 13 : 16));
+          if (amiV3[idx]) print(' V3');
         }
         setTextColor(C.MUTED); setCursor(8, 101);
-        print('OK:emul hold:write');
+        if (uiMessage.length) { setTextColor(C.LAVENDER); print(uiMessage.substring(0, 19)); }
+        else print('OK:emul hold:write');
         setCursor(8, 113);
         print(String(amiSelected + 1)); print('/'); print(String(amiCount));
         print(' BACK:menu');
       }
     } else if (uiState === UI.WRITE_TAG) {
       setTextColor(C.MINT); setCursor(8, 30); print('WRITE AMIIBO');
-      setTextColor(C.WHITE); setCursor(8, 48); print(String(writeName).substring(0, 16));
+      setTextColor(C.WHITE); setCursor(8, 48); print(formatName(writeName).substring(0, 16));
       setTextColor(C.MUTED); setCursor(8, 66); print('Tap a BLANK NTAG215');
       setCursor(8, 80); print('to the NFC antenna.');
       setTextColor(C.RED); setCursor(8, 100); print('Overwrites the tag');
@@ -216,12 +233,13 @@
       setCursor(8, 112); print('(auto-skips in 15 s)');
     } else if (uiState === UI.EMULATE) {
       setTextColor(C.MINT); setCursor(8, 32); print('EMULATING');
-      setTextColor(C.WHITE); setCursor(8, 48); print(String(emuName).substring(0, 16));
+      setTextColor(C.WHITE); setCursor(8, 48); print(formatName(emuName).substring(0, 16));
       setTextColor(C.MUTED); setCursor(8, 66); print('UID ');
       let first = true;
       for (const b of emuUid) { if (!first) print(':'); first = false; if (b < 0x10) print('0'); print(b, 16); }
       setCursor(8, 82); print(emuMode === 1 ? 'NDEF note' : 'Tap console to use');
-      setTextColor(C.LAVENDER); setCursor(8, 100); print('Killer slot 0 active');
+      setTextColor(C.LAVENDER); setCursor(8, 100); print(emuV3 ? 'V3 tag on slot 0' : 'Killer slot 0 active');
+      if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
       setTextColor(C.MINT); setCursor(8, 116); print('BACK: stop');
     } else if (uiState === UI.POWEROFF) {
       setTextColor(C.WHITE); setCursor(8, 52); print('Powering off');
@@ -265,12 +283,13 @@
       if (state === 'ok-hold') {
         if (amiCount === 0) { uiState = UI.MENU; }
         else if (!nfcReady) { uiMessage = 'PN532Killer absent'; }
+        else if (amiV3[amiSelected]) { uiMessage = 'V3: emulation only'; }
         else if (!keysReady) { uiMessage = 'Upload key files first'; }
         else armWrite(amiiboNames[amiSelected]);
       } else if (state === 'ok') {
         if (amiCount === 0) { uiState = UI.MENU; }
         else if (!nfcReady) { uiMessage = 'PN532Killer absent'; }
-        else startEmulation(amiiboNames[amiSelected], 2);
+        else startEmulation(amiiboNames[amiSelected], 2, amiV3[amiSelected]);
       }
     } else if (uiState === UI.WRITE_TAG) {
       uiState = UI.MENU; writeArmed = false; uiMessage = 'Write cancelled';
@@ -278,7 +297,7 @@
       if (state === 'ok-hold') { uiState = UI.MENU; uiMessage = 'Tag locked'; }
       else if (state === 'ok' || state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
     } else if (uiState === UI.EMULATE) {
-      emuMode = 0; emuName = ''; uiState = UI.MENU; uiMessage = 'Emulation stopped';
+      emuMode = 0; emuName = ''; emuV3 = false; uiState = UI.MENU; uiMessage = 'Emulation stopped';
     } else if (uiState === UI.POWEROFF) {
       // 700 ms cancel window; only BACK aborts (mirrors powerOffFromMenu)
       if (state === 'back') cancelPowerOff();
@@ -313,8 +332,9 @@
   function armWrite(name) {
     writeName = name; writeArmed = true; uiState = UI.WRITE_TAG; uiMessage = '';
   }
-  function startEmulation(label, mode) {
+  function startEmulation(label, mode, v3) {
     emuMode = mode; emuName = label; uiState = UI.EMULATE;
+    emuV3 = mode === 2 && !!v3;
     if (mode === 2) { for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256); }
   }
   // ---- soft power (mirrors enterDeepSleep / powerOffFromMenu) ----------------
@@ -405,18 +425,30 @@
     else uiMessage = 'Tag ignored in this state';
     drawScreen();
   };
+  let readClearTimer = null;
   document.getElementById('simConsole').onclick = () => {
-    if (uiState === UI.EMULATE) uiMessage = 'Console read the tag';
-    else uiMessage = 'Not emulating';
+    if (uiState === UI.EMULATE) {
+      // The EMULATE screen shows uiMessage at (8,108) — same as the firmware.
+      uiMessage = emuMode === 1 ? 'Phone read the note' : 'Console read tag';
+      if (readClearTimer) clearTimeout(readClearTimer);
+      readClearTimer = setTimeout(() => {
+        readClearTimer = null;
+        if (uiState === UI.EMULATE && (uiMessage === 'Console read tag' ||
+                                       uiMessage === 'Phone read the note')) {
+          uiMessage = '';
+          drawScreen();
+        }
+      }, 2500);
+    } else uiMessage = 'Not emulating';
     drawScreen();
   };
   document.getElementById('addAmiibo').onclick = () => {
     const n = 'amiibo' + (amiiboNames.length + 1) + '.bin';
-    if (amiiboNames.length < 128) { amiiboNames.push(n); amiCount = amiiboNames.length; }
+    if (amiiboNames.length < 128) { amiiboNames.push(n); amiV3.push(false); amiCount = amiiboNames.length; }
     drawScreen();
   };
   document.getElementById('delAmiibo').onclick = () => {
-    if (amiCount) { amiiboNames.splice(amiSelected, 1); amiCount = amiiboNames.length;
+    if (amiCount) { amiiboNames.splice(amiSelected, 1); amiV3.splice(amiSelected, 1); amiCount = amiiboNames.length;
       if (amiSelected >= amiCount && amiSelected > 0) amiSelected = amiCount - 1; }
     drawScreen();
   };

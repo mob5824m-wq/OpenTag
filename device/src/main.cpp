@@ -108,7 +108,7 @@ static bool recvAckWanted = false;
 static size_t recvSize = 0;
 static size_t recvLen = 0;
 static char recvName[Amiibo::kNameLen] = {0};
-static uint8_t recvBuf[572];        // largest accepted container (540 + slack)
+static uint8_t recvBuf[ntag215::kV3ImageBytes];  // v2 containers (540 + slack) or a v3 page image
 static bool recvIsKeys = false;     // transfer carries key files, not a dump
 
 // ---- amiibo signing keys (user-supplied, stored in NVS, never bundled) ----
@@ -134,9 +134,11 @@ enum EmuMode : uint8_t { EMU_NONE = 0, EMU_NOTE = 1, EMU_AMIIBO = 2 };
 static uint8_t emuMode = EMU_NONE;
 static char emuName[Amiibo::kNameLen] = "";
 static uint8_t emuUid[7] = {0x04, 0, 0, 0, 0, 0, 0};
+static bool emuV3 = false;          // emulating a v3 (Air Riders) personality
 
 // ---- amiibo library browser ----
 static char amiNames[Amiibo::kMaxFiles][Amiibo::kNameLen];
+static bool amiV3[Amiibo::kMaxFiles];   // entry is a v3 (1024+ byte) dump
 static size_t amiCount = 0;
 static size_t amiSelected = 0;
 static size_t amiTop = 0;
@@ -320,6 +322,30 @@ static void amiiboPath(const char *name, char *out, size_t cap) {
   snprintf(out, cap, "%s/%s.bin", Amiibo::kDir, name);
 }
 
+// Library display name: strips ".bin", turns - _ . into spaces and
+// capitalizes the first letter of every word — "kirby-air-riders.bin"
+// shows as "Kirby Air Riders", "Allycomplete(Air Riders).bin" keeps its
+// parentheses. Only the display changes; files keep their real names.
+static void formatAmiiboName(const char *in, char *out, size_t cap) {
+  size_t len = strlen(in);
+  if (len > 4 && strcasecmp(in + len - 4, ".bin") == 0) len -= 4;
+  size_t o = 0;
+  bool wordStart = true;
+  for (size_t i = 0; i < len && o + 1 < cap; i++) {
+    char c = in[i];
+    if (c == '-' || c == '_' || c == '.') {
+      if (o && out[o - 1] != ' ') out[o++] = ' ';
+      wordStart = true;
+      continue;
+    }
+    if (wordStart && c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    out[o++] = c;
+    wordStart = c == '(' || c == ' ';
+  }
+  while (o && out[o - 1] == ' ') o--;
+  out[o] = '\0';
+}
+
 static int compareNames(const void *a, const void *b) {
   return strcmp((const char *)a, (const char *)b);
 }
@@ -340,19 +366,40 @@ static size_t listAmiibos() {
     amiCount++;
   }
   qsort(amiNames, amiCount, Amiibo::kNameLen, compareNames);
+  // v3 (Air Riders) dumps are stored as 1024-byte page images, v2 files are
+  // always 540 bytes — size is the format tell. Checked in sorted order so
+  // the flags line up with the names after the qsort.
+  char path[64];
+  for (size_t i = 0; i < amiCount; i++) {
+    amiiboPath(amiNames[i], path, sizeof(path));
+    File f = LittleFS.open(path, "r");
+    amiV3[i] = f && f.size() >= ntag215::kV3ImageBytes;
+    if (f) f.close();
+  }
   return amiCount;
 }
 
-// Reads /amiibo/<name>.bin, validates it and normalizes it to 540 pages.
-static bool loadAmiiboImage(const char *name, uint8_t image[ntag215::kImageBytes]) {
+// Reads /amiibo/<name>.bin, validates it and normalizes it: v2 dumps become
+// 540-byte NTAG215 page images; v3 (Air Riders generation) dumps are kept as
+// their full 1024-byte page image with *isV3 set.
+static bool loadAmiiboImage(const char *name, uint8_t image[ntag215::kV3ImageBytes],
+                            bool *isV3 = nullptr) {
   char path[64];
   amiiboPath(name, path, sizeof(path));
   File f = LittleFS.open(path, "r");
   if (!f) return false;
-  uint8_t buf[572];
+  uint8_t buf[ntag215::kV3ImageBytes];
   const size_t got = f.read(buf, sizeof(buf));
   f.close();
+  if (isV3) *isV3 = false;
+  memset(image, 0, ntag215::kV3ImageBytes);
   if (got < 532) return false;
+  if (ntag215::validateV3Dump(buf, got)) {
+    memcpy(image, buf, ntag215::kV3ImageBytes);
+    if (isV3) *isV3 = true;
+    memcpy(emuUid, image, 7);
+    return true;
+  }
   // Nothing meaningful may follow the tag image in the file.
   if (got > 572) return false;
   if (!ntag215::validateDump(buf, got)) return false;
@@ -407,10 +454,20 @@ void drawScreen(bool force = false) {
         const int y = 34 + (int)i * 14;
         oled.setTextColor(idx == amiSelected ? MINT : MUTED);
         oled.setCursor(8, y); oled.print(idx == amiSelected ? "> " : "  ");
-        oled.print(String(amiNames[idx]).substring(0, 16));
+        char pretty[Amiibo::kNameLen];
+        formatAmiiboName(amiNames[idx], pretty, sizeof(pretty));
+        oled.print(String(pretty).substring(0, amiV3[idx] ? 13 : 16));
+        if (amiV3[idx]) oled.print(" V3");
       }
-      oled.setTextColor(MUTED); oled.setCursor(8, 101);
-      oled.print("OK:emul hold:write");
+      // The hint line doubles as the message line so feedback (missing keys,
+      // V3 write refusal, absent Killer) is actually visible here.
+      if (uiMessage.length()) {
+        oled.setTextColor(LAVENDER); oled.setCursor(8, 101);
+        oled.print(uiMessage.substring(0, 19));
+      } else {
+        oled.setTextColor(MUTED); oled.setCursor(8, 101);
+        oled.print("OK:emul hold:write");
+      }
       oled.setCursor(8, 113);
       oled.print((int)(amiSelected + 1)); oled.print('/'); oled.print((int)amiCount);
       oled.print(" BACK:menu");
@@ -418,7 +475,11 @@ void drawScreen(bool force = false) {
   } else if (uiState == UI_WRITE_TAG) {
     oled.setTextColor(MINT); oled.setCursor(8, 30); oled.print("WRITE AMIIBO");
     oled.setTextColor(WHITE); oled.setCursor(8, 48);
-    oled.print(String(writeName).substring(0, 16));
+    {
+      char pretty[Amiibo::kNameLen];
+      formatAmiiboName(writeName, pretty, sizeof(pretty));
+      oled.print(String(pretty).substring(0, 16));
+    }
     oled.setTextColor(MUTED); oled.setCursor(8, 66); oled.print("Tap a BLANK NTAG215");
     oled.setCursor(8, 80); oled.print("to the NFC antenna.");
     oled.setTextColor(RED); oled.setCursor(8, 100); oled.print("Overwrites the tag");
@@ -434,7 +495,11 @@ void drawScreen(bool force = false) {
   } else if (uiState == UI_EMULATE) {
     oled.setTextColor(MINT); oled.setCursor(8, 32); oled.print("EMULATING");
     oled.setTextColor(WHITE); oled.setCursor(8, 48);
-    oled.print(String(emuName).substring(0, 16));
+    {
+      char pretty[Amiibo::kNameLen];
+      formatAmiiboName(emuName, pretty, sizeof(pretty));
+      oled.print(String(pretty).substring(0, 16));
+    }
     oled.setTextColor(MUTED); oled.setCursor(8, 66); oled.print("UID ");
     for (int i = 0; i < 7; ++i) {
       if (i) oled.print(':');
@@ -443,7 +508,10 @@ void drawScreen(bool force = false) {
     }
     oled.setCursor(8, 82); oled.print(emuMode == EMU_NOTE ? "NDEF note" : "Tap console to use");
     oled.setTextColor(LAVENDER); oled.setCursor(8, 100);
-    oled.print("Killer slot 0 active");
+    oled.print(emuV3 ? "V3 tag on slot 0" : "Killer slot 0 active");
+    if (uiMessage.length()) {
+      oled.setTextColor(LAVENDER); oled.setCursor(8, 108); oled.print(uiMessage.substring(0, 19));
+    }
     oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: stop");
   } else if (uiState == UI_POWEROFF) {
     oled.setTextColor(WHITE); oled.setCursor(8, 52); oled.print("Powering off");
@@ -532,12 +600,17 @@ bool writeNtag215Ndef(const char *kind, const char *value) {
   return true;
 }
 
-bool startEmulation(const uint8_t image[540], const char *label, uint8_t mode) {
+bool startEmulation(const uint8_t *image, const char *label, uint8_t mode, bool v3 = false) {
   if (!nfcReady) return false;
   nfc.killerSetWorkMode(KILLER_MODE_PN532);  // required baseline between modes
-  if (!nfc.killerLoadNtagImage(KILLER_TAG_NTAG_MFU, 0, image)) return false;
+  // v3 (Air Riders) personalities span pages 0x00-0xFF; the load only
+  // succeeds if the Killer firmware accepts the extended page range.
+  const bool loaded = v3 ? nfc.killerLoadNtagImageV3(0, image)
+                         : nfc.killerLoadNtagImage(KILLER_TAG_NTAG_MFU, 0, image);
+  if (!loaded) return false;
   if (!nfc.killerSetWorkMode(KILLER_MODE_EMULATOR, KILLER_TAG_NTAG_MFU, 0)) return false;
   emuMode = mode;
+  emuV3 = v3 && mode == EMU_AMIIBO;
   strlcpy(emuName, label, sizeof(emuName));
   uiState = UI_EMULATE;
   char status[80];
@@ -551,6 +624,7 @@ void stopEmulation() {
   if (emuMode == EMU_NONE) return;
   nfc.killerSetWorkMode(KILLER_MODE_PN532);
   emuMode = EMU_NONE;
+  emuV3 = false;
   emuName[0] = 0;
   uiState = UI_MENU;
   setStatus("OK:emulation-stopped");
@@ -570,9 +644,14 @@ bool startNoteEmulation() {
 }
 
 bool startAmiiboEmulation(const char *name) {
-  uint8_t image[540];
-  if (!loadAmiiboImage(name, image)) return false;
-  return startEmulation(image, name, EMU_AMIIBO);
+  uint8_t image[ntag215::kV3ImageBytes];
+  bool v3 = false;
+  if (!loadAmiiboImage(name, image, &v3)) return false;
+  if (!startEmulation(image, name, EMU_AMIIBO, v3)) {
+    if (v3) uiMessage = "Killer fw lacks V3";  // extended pages rejected
+    return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -659,10 +738,20 @@ static bool lockWrittenTag() {
 }
 
 // Arms the write flow: the dump is loaded now; re-signing happens at tap
-// time against the tag's own UID.
+// time against the tag's own UID. v3 (Air Riders) personalities live on
+// NTAG I2C Plus tags that cannot be bought blank, so they are
+// emulation-only and never reach the write path.
 static bool armAmiiboWrite(const char *name) {
   if (!keysReady) return false;
-  if (!loadAmiiboImage(name, writeImage)) return false;
+  uint8_t image[ntag215::kV3ImageBytes];
+  bool v3 = false;
+  if (!loadAmiiboImage(name, image, &v3)) return false;
+  if (v3) {
+    uiMessage = "V3: emulation only";
+    drawScreen(true);
+    return false;
+  }
+  memcpy(writeImage, image, sizeof(writeImage));
   stopEmulation();
   strlcpy(writeName, name, sizeof(writeName));
   writeArmed = true;
@@ -711,7 +800,7 @@ void adoptSyncedNoteDuringEmulation() {
 static void finalizeAmiiboUpload() {
   char name[Amiibo::kNameLen];
   size_t size;
-  uint8_t buf[572];
+  uint8_t buf[ntag215::kV3ImageBytes];
   portENTER_CRITICAL(&stateMux);
   strlcpy(name, recvName, sizeof(name));
   size = recvSize;
@@ -724,19 +813,27 @@ static void finalizeAmiiboUpload() {
   portEXIT_CRITICAL(&stateMux);
 
   if (size < 532) { setStatus("ERR:ami-invalid:short"); return; }
-  if (!ntag215::validateDump(buf, size)) {
+  uint8_t image[540];
+  const uint8_t *toWrite = nullptr;
+  size_t writeLen = 0;
+  if (ntag215::validateV3Dump(buf, size)) {
+    toWrite = buf;                          // v3: keep the full page image
+    writeLen = ntag215::kV3ImageBytes;
+  } else if (ntag215::validateDump(buf, size)) {
+    ntag215::normalizeDump(buf, size, image);
+    toWrite = image;
+    writeLen = sizeof(image);
+  } else {
     setStatus("ERR:ami-invalid:dump");
     return;
   }
-  uint8_t image[540];
-  ntag215::normalizeDump(buf, size, image);
   char path[64];
   amiiboPath(name, path, sizeof(path));
   File f = LittleFS.open(path, FILE_WRITE);
   if (!f) { setStatus("ERR:ami-io"); return; }
-  const size_t wrote = f.write(image, sizeof(image));
+  const size_t wrote = f.write(toWrite, writeLen);
   f.close();
-  if (wrote != sizeof(image)) {
+  if (wrote != writeLen) {
     LittleFS.remove(path);
     setStatus("ERR:ami-io");
     return;
@@ -754,7 +851,10 @@ void handleAmiiboPut(char *rest) {
   const char *sizeStr = colon + 1;
   char *end = nullptr;
   const long size = strtol(sizeStr, &end, 10);
-  if (end == sizeStr || *end != '\0' || size < 532 || size > 572) {
+  // v2 containers (532-572 bytes) or a full v3 (Air Riders) page image.
+  const bool sizeOk = (size >= 532 && size <= 572) ||
+                      size == (long)ntag215::kV3ImageBytes;
+  if (end == sizeStr || *end != '\0' || !sizeOk) {
     setStatus("ERR:ami-size");
     return;
   }
@@ -1028,6 +1128,11 @@ void handleButtons() {
     if (btnOk.held(1000)) {
       if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
       if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); return; }
+      if (amiV3[amiSelected]) {
+        // Air Riders-generation dumps are NTAG I2C Plus personalities;
+        // no blank tag of that format is on the market.
+        uiMessage = "V3: emulation only"; drawScreen(true); return;
+      }
       if (!keysReady) { uiMessage = "Upload key files first"; drawScreen(true); return; }
       if (!armAmiiboWrite(amiNames[amiSelected])) {
         uiMessage = "Load failed";
@@ -1039,7 +1144,7 @@ void handleButtons() {
       if (amiCount == 0) { uiState = UI_MENU; drawScreen(true); return; }
       if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); return; }
       if (!startAmiiboEmulation(amiNames[amiSelected])) {
-        uiMessage = "Load failed";
+        if (!uiMessage.length()) uiMessage = "Load failed";
         setStatus("ERR:ami-emulate");
         drawScreen(true);
       }

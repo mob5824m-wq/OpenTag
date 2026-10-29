@@ -57,9 +57,11 @@ struct KillerModel {
   uint8_t targetUid[7] = {0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
   uint8_t targetUidLen = 7;
 
-  // Emulator slot model (NTAG/MFU, slot 0).
-  uint8_t slotImage[540];
+  // Emulator slot model (NTAG/MFU, slot 0). v3Capable models firmware that
+  // accepts the extended (Air Riders) page range 0x00-0xFF.
+  uint8_t slotImage[1024];
   bool slotLoaded = false;
+  bool v3Capable = true;
   int writePageCalls = 0;
   bool doneReceived = false;
   uint8_t lastWorkMode[3] = {0, 0, 0};  // mode, type, index
@@ -202,7 +204,9 @@ struct FakeSerial final : Stream {
         } else {
           g_model->writePageCalls++;
           const uint8_t type = p[1], slot = p[2], sector = p[3], block = p[4];
-          if (type == 0x02 && slot == 0 && sector == 0 && block < 135 && n >= 9)
+          // Stock NTAG215-only firmware stays silent past page 134.
+          if (block >= 135 && !g_model->v3Capable) break;
+          if (type == 0x02 && slot == 0 && sector == 0 && n >= 9)
             memcpy(&g_model->slotImage[block * 4], p + 5, 4);
           uint8_t r[6] = {p[1], p[2], p[3], p[4], 0x00, 0x00};
           g_model->emitResponse(0x1F, r, 6);
@@ -368,6 +372,35 @@ static void testLoadNtagImage() {
   CHECK(lastFrameMatches(want));
 }
 
+static void testLoadNtagImageV3() {
+  resetBoard();
+  CHECK(nfc.begin(serial));
+
+  // v3 (Air Riders) personality: 256 pages, including the pages past the
+  // NTAG215 range (config 0xE2-0xE6, SRAM mirror 0xF0-0xFF).
+  uint8_t image[1024];
+  for (size_t p = 0; p < 256; p++) {
+    image[p * 4 + 0] = (uint8_t)p;
+    image[p * 4 + 1] = 0xB1;
+    image[p * 4 + 2] = 0x1B;
+    image[p * 4 + 3] = (uint8_t)(p ^ 0xFF);
+  }
+  CHECK(nfc.killerLoadNtagImageV3(0, image));
+  CHECK_EQ(g_model->writePageCalls, 256);
+  CHECK(g_model->doneReceived);
+  CHECK(memcmp(g_model->slotImage, image, 1024) == 0);
+}
+
+static void testLoadNtagImageV3Rejected() {
+  resetBoard();
+  g_model->v3Capable = false;  // stock NTAG215-only Killer firmware
+  CHECK(nfc.begin(serial));
+  uint8_t image[1024] = {0};
+  // Pages 0-134 load, page 135 gets no answer: the driver must give up and
+  // report failure instead of half-loading a tag.
+  CHECK(nfc.killerLoadNtagImageV3(0, image) == false);
+}
+
 static void testAckResync() {
   resetBoard();
   g_model->garbageBeforeAck = true;
@@ -409,6 +442,8 @@ int main() {
   testInDataExchangeNtag();
   testKillerVendorCommands();
   testLoadNtagImage();
+  testLoadNtagImageV3();
+  testLoadNtagImageV3Rejected();
   testAckResync();
   testTimeouts();
   testCorruptDataChecksum();

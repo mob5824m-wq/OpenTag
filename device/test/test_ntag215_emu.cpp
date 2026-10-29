@@ -89,6 +89,45 @@ static void makeDump(uint8_t out[kImageBytes]) {
   b.exportImage(out);
 }
 
+// v3 (Air Riders generation) dumps: 1024-byte page images whose figure ID
+// (pages 0x15-0x16, byte 0x5B) ends in 0x03. Real rips carry whatever BCC
+// their tag has, so only the vendor byte and the v3 marker are checked.
+static void makeV3Dump(uint8_t out[kV3ImageBytes]) {
+  memset(out, 0, kV3ImageBytes);
+  out[0] = 0x04;                       // NXP
+  memcpy(out + 0x54, "\x1F\x00\x00\x00\x04\xC4\x1E\x03", 8);  // Kirby & Warp Star
+  memcpy(out + 0x80, "\x02\x00\x7F\xCB\x95\x65\x61\xAF", 8);  // SRAM-style data
+}
+
+static void testValidateV3Dump() {
+  uint8_t dump[kV3ImageBytes];
+  makeV3Dump(dump);
+
+  const char *why = nullptr;
+  CHECK(validateV3Dump(dump, sizeof(dump), &why));
+  CHECK(why == nullptr);
+
+  why = "x";
+  CHECK(!validateV3Dump(dump, 1023, &why));
+  CHECK(why && std::strcmp(why, "short") == 0);
+
+  CHECK(!validateV3Dump(dump, sizeof(dump) - 1, &why));
+
+  dump[0x5B] = 0x02;  // v2 figure: not a v3 dump
+  CHECK(!validateV3Dump(dump, sizeof(dump), &why));
+  CHECK(why && std::strcmp(why, "v3") == 0);
+  dump[0x5B] = 0x03;
+
+  dump[0] = 0x11;  // not NXP
+  CHECK(!validateV3Dump(dump, sizeof(dump), &why));
+  CHECK(why && std::strcmp(why, "vendor") == 0);
+
+  // A v2 (540-byte) dump is never a valid v3 dump.
+  uint8_t v2[kImageBytes];
+  makeDump(v2);
+  CHECK(!validateV3Dump(v2, sizeof(v2)));
+}
+
 static void testValidateDump() {
   uint8_t dump[kImageBytes];
   makeDump(dump);
@@ -163,6 +202,7 @@ int main() {
   testImageBuilderBasics();
   testSetNdefTlv();
   testValidateDump();
+  testValidateV3Dump();
   testNormalizeDump();
   if (failures == 0) {
     std::printf("test_ntag215: %d checks passed\n", checks);

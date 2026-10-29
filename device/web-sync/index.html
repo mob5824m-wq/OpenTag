@@ -43,7 +43,7 @@
 
   <section class="card">
     <strong>Amiibo library</strong>
-    <p class="sub">Upload a <b>.zip</b>, loose <b>.bin</b> dumps, or Flipper Zero <b>.nfc</b> files from your own collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized in your browser, validated, then copied to the device over BLE. Nothing is uploaded to any server.</p>
+    <p class="sub">Upload a <b>.zip</b>, loose <b>.bin</b> dumps, or Flipper Zero <b>.nfc</b> files from your own collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized in your browser, validated, then copied to the device over BLE. Kirby Air Riders <b>v3</b> dumps (1024-byte NTAG I²C page images) are accepted as-is for emulation. Nothing is uploaded to any server.</p>
     <div class="row"><label class="filebtn" for="zipFile">Choose .zip / .bin / .nfc</label><input id="zipFile" class="hidden" type="file" accept=".zip,.bin,.nfc,.tag,.dump,application/zip,text/plain" multiple><button id="syncZip" disabled>Sync to device</button><button id="refresh" class="secondary" disabled>Refresh list</button><button id="stopEmu" class="secondary" disabled>Stop emulation</button></div>
     <div id="parsed" class="library"></div>
     <div class="rule"></div>
@@ -98,8 +98,10 @@
   // ---------- dump validation & normalization ----------
   // Accepts any container a legal rip produces: exact 532/540/572-byte .bin,
   // zero- or newline-padded exports, N2 Elite 572-byte files with a 32-byte
-  // header, and Flipper Zero .nfc text (parsed separately). Everything is
-  // normalized to the full 540-byte NTAG215 page image before upload.
+  // header, Flipper Zero .nfc text (parsed separately), and v3 "Air Riders"
+  // generation dumps (NTAG I2C Plus personalities, 1024+ bytes, figure ID
+  // ending in 0x03 — kept as full page images for emulation). Everything
+  // else is normalized to the full 540-byte NTAG215 page image before upload.
   function structuralCheck(view) {
     // view: Uint8Array of at least 16 bytes at the candidate offset
     if (view.length < 532) return 'too short';
@@ -110,11 +112,28 @@
     if (view[12] !== 0xE1 || view[13] !== 0x10 || view[14] !== 0x3E) return 'not an NTAG215 tag';
     return null;
   }
+  // v3 (Kirby Air Riders generation) check: NXP vendor byte plus the
+  // figure-ID format byte at 0x5B. Real rips carry whatever BCC their tag
+  // has, so the v2 UID checksum is not required here.
+  function v3Check(view) {
+    if (view.length < 1024) return 'too short for v3';
+    if (view[0] !== 0x04) return 'not an NXP tag UID';
+    if (view[0x5B] !== 0x03) return 'not a v3 figure ID';
+    return null;
+  }
+  function checkImage(image) {
+    return image.length === 1024 ? v3Check(image) : structuralCheck(image);
+  }
   function normalizeDump(bytes) {
+    const total = bytes.length;
+    // v3 dumps are 1024 bytes or more (full NTAG I2C Plus dumps are 2312);
+    // only the first 256 pages are reachable without a sector select.
+    if (total >= 1024 && !v3Check(bytes)) {
+      return { image: bytes.slice(0, 1024), v3: true, reason: null };
+    }
+    if (total < 532) return { image: null, reason: 'too short' };
     // Candidate start offsets: 0 (plain dump, or trailing junk after 540
     // bytes) and 32 (N2 Elite style header in front of the tag data).
-    const total = bytes.length;
-    if (total < 532) return { image: null, reason: 'too short' };
     const candidates = total >= 564 ? [0, 32] : [0];
     for (const off of candidates) {
       // Clamp to one page image; trailing padding/newlines/junk beyond it and
@@ -128,19 +147,22 @@
     }
     return { image: null, reason: structuralCheck(bytes.subarray(0, Math.min(total, 540))) || 'unrecognized layout' };
   }
-  // Flipper Zero NFC text format: "Page N: aa bb cc dd" lines.
+  // Flipper Zero NFC text format: "Page N: aa bb cc dd" lines. v3 (NTAG I2C)
+  // exports carry pages up to 255 and build a 1024-byte image.
   function parseFlipperNfc(text) {
     if (!/Page\s+\d+\s*:/i.test(text)) return null;
     const pages = [];
+    let maxPage = 0;
     for (const m of text.matchAll(/^Page\s+(\d+)\s*:\s*([0-9a-fA-F ]+)$/gm)) {
       const n = parseInt(m[1], 10);
       const bytes = m[2].trim().split(/\s+/).map(h => parseInt(h, 16));
-      if (n > 134 || bytes.some(b => isNaN(b)) || (bytes.length !== 4 && bytes.length !== 0)) return null;
-      if (bytes.length === 4) pages[n] = bytes;
+      if (n > 255 || bytes.some(b => isNaN(b)) || (bytes.length !== 4 && bytes.length !== 0)) return null;
+      if (bytes.length === 4) { pages[n] = bytes; if (n > maxPage) maxPage = n; }
     }
     if (!pages[0]) return null;
-    const image = new Uint8Array(540);
-    for (let n = 0; n <= 134; n++) if (pages[n]) image.set(pages[n], n * 4);
+    const v3 = maxPage > 134;
+    const image = new Uint8Array(v3 ? 1024 : 540);
+    for (let n = 0; n <= maxPage; n++) if (pages[n]) image.set(pages[n], n * 4);
     return image;
   }
   function validateDump(buf) {  // used for display of already-normalized images
@@ -300,17 +322,21 @@
       } catch (err) { log(`${f.name}: ${err.message}`, 'err'); }
     }
     const seen = new Set(parsed.map(x => x.name));
-    let ok = 0, shown = 0;
+    let ok = 0, shown = 0, v3count = 0;
     for (const f of found) {
-      let image = null, reason = null;
+      let image = null, reason = null, v3 = false;
       if (f.text != null) {
         image = parseFlipperNfc(f.text);
-        if (image) { const r = structuralCheck(image); if (r) { reason = r; image = null; } }
-        else if (f.explicit) reason = 'no NTAG215 pages found';
+        if (image) {
+          const r = checkImage(image);
+          if (r) { reason = r; image = null; }
+          else v3 = image.length === 1024;
+        }
+        else if (f.explicit) reason = 'no NTAG215/NTAG I2C pages found';
       }
       if (!image && f.bytes) {
         const n = normalizeDump(f.bytes);
-        image = n.image; reason = n.reason;
+        image = n.image; reason = n.reason; v3 = !!n.v3;
       }
       if (!image) {
         if (!f.explicit) continue;  // silently skip sniffed non-dumps
@@ -320,13 +346,13 @@
         parsed.push(item);
         continue;
       }
-      const item = { name: f.name, data: image, uidHex: uidHex(image), valid: true, reason: null };
+      const item = { name: f.name, data: image, uidHex: uidHex(image), valid: true, v3, reason: null };
       if (!item.name || seen.has(item.name)) item.name = (item.name || 'tag') + '_' + Math.random().toString(36).slice(2, 6);
       seen.add(item.name);
       parsed.push(item);
-      ok++; shown++;
+      ok++; shown++; if (v3) v3count++;
     }
-    log(`Parsed ${found.length} file(s): ${ok} valid NTAG215 dump(s)`);
+    log(`Parsed ${found.length} file(s): ${ok} valid dump(s)${v3count ? ` (${v3count} v3 / Air Riders)` : ''}`);
     renderParsed();
   };
 
@@ -334,20 +360,22 @@
     const root = $('parsed'); root.replaceChildren();
     if (!parsed.length) {
       const p = document.createElement('p'); p.className = 'sub';
-      p.textContent = 'No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, zero/newline-padded OK), Flipper Zero .nfc, or a .zip containing either.';
+      p.textContent = 'No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, zero/newline-padded OK), 1024-byte v3 Air Riders dumps, Flipper Zero .nfc, or a .zip containing any of those.';
       root.append(p); return;
     }
     parsed.forEach((item, i) => {
       const row = document.createElement('div'); row.className = 'item';
       row.append(amiiboThumb(item.name));
       const tag = document.createElement('span'); tag.className = 'tag ' + (item.valid ? 'ok' : 'bad');
-      tag.textContent = item.valid ? 'NTAG215' : 'INVALID';
+      tag.textContent = item.valid ? (item.v3 ? 'V3 · I2C' : 'NTAG215') : 'INVALID';
       const copy = document.createElement('div'); copy.className = 'copy';
       const strong = document.createElement('strong'); strong.textContent = item.name;
       const small = document.createElement('small');
       const meta = amiiboFromFilename(item.name);
       const metaBits = meta ? [meta.name, meta.series, meta.type, meta.year].filter(Boolean).join(' · ') : 'no metadata match';
-      small.textContent = item.valid ? `${item.data.length} B · UID ${item.uidHex}` : (item.reason || 'rejected');
+      small.textContent = item.valid
+        ? (item.v3 ? `${item.data.length} B · v3 Air Riders dump · UID ${item.uidHex}` : `${item.data.length} B · UID ${item.uidHex}`)
+        : (item.reason || 'rejected');
       const metaLine = document.createElement('small');
       metaLine.textContent = metaBits;
       if (!meta) metaLine.style.opacity = '0.6';
