@@ -444,8 +444,8 @@ void drawScreen(bool force = false) {
     oled.print("Killer slot 0 active");
     oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: stop");
   } else {
-    const char *items[] = {"Write NDEF note", "Emulate NDEF note", "Amiibo library",
-                           "BLE sync", "Clear NDEF note"};
+    const char *items[] = {"Amiibo library", "BLE sync", "Write NDEF note",
+                           "Emulate NDEF note", "Clear NDEF note"};
     for (int i = 0; i < 5; ++i) {
       const int y = 28 + i * 16;
       oled.setTextColor(i == menuIndex ? MINT : MUTED);
@@ -1041,20 +1041,20 @@ void handleButtons() {
     if (btnBack.pressed()) { uiMessage = "You're at the menu"; drawScreen(true); }
     if (btnOk.pressed()) {
       if (menuIndex == 0) {
-        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
-        else if (!nfcReady) uiMessage = "PN532Killer absent";
-        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
-      } else if (menuIndex == 1) {
-        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
-        else if (!nfcReady) uiMessage = "PN532Killer absent";
-        else { uiMessage = ""; if (!startNoteEmulation()) { uiMessage = "Emulation failed"; setStatus("ERR:emulate"); } }
-      } else if (menuIndex == 2) {
         listAmiibos();
         amiSelected = 0; amiTop = 0;
         uiState = UI_LIBRARY;
         uiMessage = "";
-      } else if (menuIndex == 3) {
+      } else if (menuIndex == 1) {
         uiMessage = bleConnected ? "Connected: use web sync" : "OpenTag BLE is advertising";
+      } else if (menuIndex == 2) {
+        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
+        else if (!nfcReady) uiMessage = "PN532Killer absent";
+        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
+      } else if (menuIndex == 3) {
+        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
+        else if (!nfcReady) uiMessage = "PN532Killer absent";
+        else { uiMessage = ""; if (!startNoteEmulation()) { uiMessage = "Emulation failed"; setStatus("ERR:emulate"); } }
       } else {
         memset(pendingValue, 0, sizeof(pendingValue));
         strlcpy(pendingKind, "TEXT", sizeof(pendingKind));

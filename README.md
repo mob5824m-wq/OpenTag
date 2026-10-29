@@ -254,7 +254,8 @@ library entry.
 
 ## Device menu
 
-`Write NDEF note` → `Emulate NDEF note` → `Amiibo library` → `BLE sync` →
+`Amiibo library` (first — emulation is the main use, so the menu opens on
+it) → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
 `Clear NDEF note`, driven by UP/DOWN/OK with BACK to cancel or exit. Emulation
 runs on the PN532Killer's slot
 0 and stops on any button press or a BLE `STOP`. In the library, short OK
