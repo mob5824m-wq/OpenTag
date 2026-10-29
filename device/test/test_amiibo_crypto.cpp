@@ -575,9 +575,11 @@ static void testResign() {
   CHECK(plain[0] == TAG_RESIGNED_IDPAGES[8]);
 
   // Re-signing the already re-signed dump for the original UID restores the
-  // original crypto region.
-  uint8_t origUid[8];
-  memcpy(origUid, REF_TAG, 8);
+  // original crypto region. idPages is 9 bytes (8 UID/BCC + the live page-2
+  // byte 0); copying 9 keeps the page-2 byte defined instead of reading past
+  // the buffer (which -O2 builds exposed).
+  uint8_t origUid[9];
+  memcpy(origUid, REF_TAG, 9);
   CHECK(resign(&keys, tag, origUid));
   CHECK(memcmp(tag, REF_TAG, 520) == 0);
 
