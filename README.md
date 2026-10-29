@@ -44,7 +44,82 @@ guide, and parts list.
   pixel position ported from `drawScreen()`) with working buttons and
   long-press, for UI testing with no hardware attached.
 
-## Hardware architecture
+## Set up your OpenTag
+
+Three ways in, depending on what's on your desk. **A** needs nothing, **B**
+is a working device on a bench in an afternoon, **C** is the finished
+handheld.
+
+### A · No hardware — try the interface (1 minute)
+
+Open [`device/web-preview/index.html`](device/web-preview/index.html) in any
+browser: a pixel-faithful simulation of the OLED menu with working buttons
+and long-press — every screen the real device shows, nothing to install.
+
+### B · Bench build — a working device today
+
+Parts: **ESP32-S3-DevKitC-1** (16 MB flash), **PN532Killer**, **1.3"
+SSD1351 OLED** (7-pin SPI), 4 × tactile buttons, Dupont jumpers, USB-C
+cable. No PCB, no soldering — USB powers the whole bench setup.
+
+1. Install [PlatformIO](https://platformio.org/) (VS Code extension or
+   `pip install platformio`).
+2. Flash the firmware and the library filesystem:
+   ```sh
+   cd device
+   pio run -e opentag_s3 -t upload      # firmware (app partition only)
+   pio run -e opentag_s3 -t uploadfs    # LittleFS: on-device amiibo storage
+   ```
+3. Wire the modules (full map and rationale in
+   [`device/HARDWARE.md`](device/HARDWARE.md)):
+
+   | Connection | DevKit pin (GPIO) | Module side |
+   |---|---|---|
+   | OLED VCC / GND | J1-1 (3V3) / GND | VCC / GND |
+   | OLED SCK / MOSI | J1-18 (12) / J1-17 (11) | SCL / SDA |
+   | OLED CS / DC / RST | J1-16 (10) / J1-15 (9) / J1-12 (8) | CS / DC / RES |
+   | Killer 3V3 / GND (J4) | J1-2 (3V3) / GND | VCC / GND |
+   | Killer RX / TX (J4) | J1-10 TX (17) / J1-11 RX (18) | crossed: TX → RX |
+   | Buttons UP / DOWN / OK / BACK | J3-6 (42) / J3-5 (2) / J3-4 (1) / J1-19 (13) | one leg each; other legs to GND |
+
+4. Plug in USB — the OLED shows the menu within a couple of seconds. Only
+   the NFC actions need the Killer attached; trying one without it shows
+   **PN532Killer absent** on screen. Wire it in and the whole menu is live.
+5. Serve the sync page. Web Bluetooth only runs on a secure origin
+   (localhost or HTTPS) — **double-clicking the file is not enough**:
+   ```sh
+   cd device/web-sync
+   python3 -m http.server 8000        # then open http://localhost:8000
+   ```
+6. In Chrome or Edge: **Connect over BLE** (the device shows up as
+   *OpenTag*) → pick a `.zip` of your own NTAG215 `.bin` dumps → they land
+   in the on-device library with names and box art. Browse on the OLED,
+   press OK on one, and tap your console.
+
+Optional extras on the same hardware: send a text/URL **NDEF note** from the
+sync page (the device menu can write it to a blank NTAG215 or emulate it —
+a good first test of the tag pipeline), and — only if you write amiibo to
+physical tags — upload your `unfixed-info.bin` / `locked-secret.bin` key
+files. Emulation needs neither.
+
+### C · Full handheld
+
+1. **Order the PCB** — upload
+   [`hardware/pcb/gerbers/opentag-gerbers.zip`](hardware/pcb/gerbers/) to any
+   fab (JLCPCB, PCBWay, …). The zip is complete and machine-verified by its
+   generator.
+2. **Print the shell** — [`hardware/cad/stl/`](hardware/cad/stl/): front
+   shell, back plate, 4 button caps (PLA/PETG, no supports needed).
+3. **Assemble** per [`hardware/pcb/WIRING.md`](hardware/pcb/WIRING.md);
+   parts and budget in [`hardware/BOM.md`](hardware/BOM.md) (≈ $72–102
+   complete).
+4. The device is identical to the bench build — continue from step 5 in
+   path **B**.
+
+Updating an assembled device later never touches your library:
+`python tools/update_opentag.py` flashes only the app partition
+([details](#updating-the-firmware-keeps-your-amiibos)).
+
 
 ESP32-S3-DevKitC-1 + **PN532Killer** (ST25R3916-class NFC emulator; the
 classic PN532 cannot present the 7-byte, signature-bound UIDs amiibo relies
@@ -88,18 +163,13 @@ Open [`android-app/`](android-app/) in Android Studio and run — see
 [`android-app/README-ANDROID.md`](android-app/README-ANDROID.md). Platform
 APIs only, no dependencies; minSdk 23.
 
-## Build and flash
+## Tests and gates (host-native, no hardware)
 
-Requirements: PlatformIO Core + an ESP32-S3-DevKitC-1 with 16 MB flash.
+The firmware build commands live in [Setup B](#b--bench-build--a-working-device-today).
+Everything below runs on any machine with `g++` — no toolchain download, no
+device attached.
 
-```sh
-cd device
-pio run -e opentag_s3            # firmware
-pio run -e opentag_s3 -t upload
-pio run -e opentag_s3 -t uploadfs # LittleFS image (amiibo library storage)
-```
-
-Unit tests (host-native, no hardware needed):
+Unit tests:
 
 ```sh
 cd device/test

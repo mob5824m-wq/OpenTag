@@ -22,9 +22,9 @@
   <h1>Your tags,<br>ready to tap.</h1>
   <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — and browse the full amiibo database with box art below, no connection needed.</p>
   <section class="card">
-    <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Use Chrome or Edge on HTTPS / localhost.</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
+    <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Chrome or Edge · page served from localhost or HTTPS</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
-    <div class="notice">The device answers with status lines shown in the log below.</div>
+    <div class="notice">Power the device on (it advertises as <b>OpenTag</b>), then press <b>Connect over BLE</b>. If the browser refuses: Web Bluetooth needs a secure origin — run <code>python3 -m http.server 8000</code> inside this <code>web-sync</code> folder and open <code>http://localhost:8000</code> (opening the file directly is not enough). Everything the device answers appears in the log below.</div>
     <div id="log" aria-live="polite"></div>
   </section>
 
