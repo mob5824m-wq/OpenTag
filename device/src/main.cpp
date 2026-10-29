@@ -135,6 +135,7 @@ static uint8_t emuMode = EMU_NONE;
 static char emuName[Amiibo::kNameLen] = "";
 static uint8_t emuUid[7] = {0x04, 0, 0, 0, 0, 0, 0};
 static bool emuV3 = false;          // emulating a v3 (Air Riders) personality
+static uint8_t emuSlot = 0;        // live Killer emulator slot (0-7, rotates)
 
 // ---- amiibo library browser ----
 static char amiNames[Amiibo::kMaxFiles][Amiibo::kNameLen];
@@ -508,11 +509,17 @@ void drawScreen(bool force = false) {
     }
     oled.setCursor(8, 82); oled.print(emuMode == EMU_NOTE ? "NDEF note" : "Tap console to use");
     oled.setTextColor(LAVENDER); oled.setCursor(8, 100);
-    oled.print(emuV3 ? "V3 tag on slot 0" : "Killer slot 0 active");
+    {
+      char line[24];
+      snprintf(line, sizeof(line), emuV3 ? "V3 tag on slot %d" : "Killer slot %d active",
+               (int)emuSlot);
+      oled.print(line);
+    }
     if (uiMessage.length()) {
       oled.setTextColor(LAVENDER); oled.setCursor(8, 108); oled.print(uiMessage.substring(0, 19));
     }
-    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: stop");
+    oled.setTextColor(MINT); oled.setCursor(8, 116);
+    oled.print(emuMode == EMU_AMIIBO && amiCount > 1 ? "UP/DN swap OK:stop" : "BACK: stop");
   } else if (uiState == UI_POWEROFF) {
     oled.setTextColor(WHITE); oled.setCursor(8, 52); oled.print("Powering off");
     oled.setTextColor(MINT); oled.setCursor(8, 76); oled.print("BACK: cancel");
@@ -610,9 +617,32 @@ bool startEmulation(const uint8_t *image, const char *label, uint8_t mode, bool 
   if (!loaded) return false;
   if (!nfc.killerSetWorkMode(KILLER_MODE_EMULATOR, KILLER_TAG_NTAG_MFU, 0)) return false;
   emuMode = mode;
+  emuSlot = 0;
   emuV3 = v3 && mode == EMU_AMIIBO;
   strlcpy(emuName, label, sizeof(emuName));
   uiState = UI_EMULATE;
+  char status[80];
+  snprintf(status, sizeof(status), "OK:emulating:%s", label);
+  setStatus(status);
+  drawScreen(true);
+  return true;
+}
+
+// Hot-swap while emulating: UP/DOWN in the EMULATE screen loads the next
+// library entry into the ROTATING slot (never the one being presented) and
+// switches presentation, so consoles can be tapped back-to-back without
+// stopping the emulator. The Killer has 8 slots; OpenTag cycles through
+// them all so a swap never rewrites a slot a console might still be polling.
+bool emuHotSwap(const uint8_t *image, const char *label, bool v3) {
+  const uint8_t slot = (emuSlot + 1) & 7;
+  nfc.killerSetWorkMode(KILLER_MODE_PN532);  // required baseline between modes
+  const bool loaded = v3 ? nfc.killerLoadNtagImageV3(slot, image)
+                         : nfc.killerLoadNtagImage(KILLER_TAG_NTAG_MFU, slot, image);
+  if (!loaded) return false;
+  if (!nfc.killerSetWorkMode(KILLER_MODE_EMULATOR, KILLER_TAG_NTAG_MFU, slot)) return false;
+  emuSlot = slot;
+  emuV3 = v3;
+  strlcpy(emuName, label, sizeof(emuName));
   char status[80];
   snprintf(status, sizeof(status), "OK:emulating:%s", label);
   setStatus(status);
@@ -625,6 +655,7 @@ void stopEmulation() {
   nfc.killerSetWorkMode(KILLER_MODE_PN532);
   emuMode = EMU_NONE;
   emuV3 = false;
+  emuSlot = 0;
   emuName[0] = 0;
   uiState = UI_MENU;
   setStatus("OK:emulation-stopped");
@@ -1174,10 +1205,31 @@ void handleButtons() {
       drawScreen(true);
     }
   } else if (uiState == UI_EMULATE) {
-    if (btnUp.pressed() || btnDown.pressed() || btnOk.pressed() || btnBack.pressed()) {
-      stopEmulation();
-      uiMessage = "Emulation stopped";
-      drawScreen(true);
+    // Amiibo mode: UP/DOWN hot-swaps to the neighbouring library entry on a
+    // rotating emulator slot; the emulation keeps running. OK/BACK stop.
+    // Note mode: any button stops (there is nothing to swap to).
+    if (emuMode == EMU_AMIIBO && amiCount > 1 &&
+        (btnUp.pressed() || btnDown.pressed())) {
+      amiSelected = btnUp.pressed() ? (amiSelected + amiCount - 1) % amiCount
+                                    : (amiSelected + 1) % amiCount;
+      uint8_t image[ntag215::kV3ImageBytes];
+      bool v3 = false;
+      if (!loadAmiiboImage(amiNames[amiSelected], image, &v3)) {
+        uiMessage = "Load failed";
+        drawScreen(true);
+      } else if (!emuHotSwap(image, amiNames[amiSelected], v3)) {
+        uiMessage = v3 ? "Killer fw lacks V3" : "Swap failed";
+        drawScreen(true);
+      }
+    } else {
+      const bool stopBtn = btnOk.pressed() || btnBack.pressed() ||
+                           (emuMode != EMU_AMIIBO &&
+                            (btnUp.pressed() || btnDown.pressed()));
+      if (stopBtn) {
+        stopEmulation();
+        uiMessage = "Emulation stopped";
+        drawScreen(true);
+      }
     }
   } else {  // UI_MENU
     if (btnUp.pressed()) { menuIndex = (menuIndex + 4) % 5; uiMessage = ""; drawScreen(true); }

@@ -268,8 +268,12 @@ storing the device.
 `Amiibo library` (first — emulation is the main use, so the menu opens on
 it) → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
 `Clear NDEF note`, driven by UP/DOWN/OK with BACK to cancel or exit. Emulation
-runs on the PN532Killer's slot
-0 and stops on any button press or a BLE `STOP`. In the library, short OK
+starts on the PN532Killer's slot
+0. **While an amiibo is emulating, UP/DOWN hot-swaps to the neighbouring
+library entry without stopping** — each swap loads onto the next of the
+Killer's 8 emulator slots (never rewriting the one being presented), so you
+can tap console after console with different figures. OK/BACK stops the
+emulation (any button stops NDEF-note emulation), as does a BLE `STOP`. In the library, short OK
 emulates; long OK (1 s) is the advanced path that arms a write to a physical
 tag. Long-pressing OK **at the menu** is soft power: a "Powering off" screen
 appears (BACK cancels within ~0.7 s), then the OLED parks and the ESP32-S3

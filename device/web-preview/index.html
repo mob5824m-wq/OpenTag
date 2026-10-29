@@ -154,6 +154,7 @@
   let amiV3 = [false, false, false, true, false];
   let amiCount = 5, amiSelected = 0, amiTop = 0;
   let emuV3 = false;
+  let emuSlot = 0;   // live Killer emulator slot (0-7, rotates on hot-swap)
   let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
   let poweredOff = false, powerOffTimer = null;
@@ -238,9 +239,11 @@
       let first = true;
       for (const b of emuUid) { if (!first) print(':'); first = false; if (b < 0x10) print('0'); print(b, 16); }
       setCursor(8, 82); print(emuMode === 1 ? 'NDEF note' : 'Tap console to use');
-      setTextColor(C.LAVENDER); setCursor(8, 100); print(emuV3 ? 'V3 tag on slot 0' : 'Killer slot 0 active');
+      setTextColor(C.LAVENDER); setCursor(8, 100);
+      print(emuV3 ? 'V3 tag on slot ' + emuSlot : 'Killer slot ' + emuSlot + ' active');
       if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
-      setTextColor(C.MINT); setCursor(8, 116); print('BACK: stop');
+      setTextColor(C.MINT); setCursor(8, 116);
+      print(emuMode === 2 && amiCount > 1 ? 'UP/DN swap OK:stop' : 'BACK: stop');
     } else if (uiState === UI.POWEROFF) {
       setTextColor(C.WHITE); setCursor(8, 52); print('Powering off');
       setTextColor(C.MINT); setCursor(8, 76); print('BACK: cancel');
@@ -297,7 +300,18 @@
       if (state === 'ok-hold') { uiState = UI.MENU; uiMessage = 'Tag locked'; }
       else if (state === 'ok' || state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
     } else if (uiState === UI.EMULATE) {
-      emuMode = 0; emuName = ''; emuV3 = false; uiState = UI.MENU; uiMessage = 'Emulation stopped';
+      // Amiibo mode: UP/DOWN hot-swaps to the neighbouring library entry on
+      // a rotating emulator slot without stopping. Note mode: any key stops.
+      if (emuMode === 2 && amiCount > 1 && (state === 'up' || state === 'down')) {
+        amiSelected = state === 'up' ? (amiSelected + amiCount - 1) % amiCount
+                                     : (amiSelected + 1) % amiCount;
+        emuHotSwap(amiiboNames[amiSelected], amiV3[amiSelected]);
+        uiMessage = '';
+      } else if (state === 'ok' || state === 'back' ||
+                 (emuMode !== 2 && (state === 'up' || state === 'down'))) {
+        emuMode = 0; emuName = ''; emuV3 = false; emuSlot = 0;
+        uiState = UI.MENU; uiMessage = 'Emulation stopped';
+      }
     } else if (uiState === UI.POWEROFF) {
       // 700 ms cancel window; only BACK aborts (mirrors powerOffFromMenu)
       if (state === 'back') cancelPowerOff();
@@ -333,9 +347,16 @@
     writeName = name; writeArmed = true; uiState = UI.WRITE_TAG; uiMessage = '';
   }
   function startEmulation(label, mode, v3) {
-    emuMode = mode; emuName = label; uiState = UI.EMULATE;
+    emuMode = mode; emuName = label; uiState = UI.EMULATE; emuSlot = 0;
     emuV3 = mode === 2 && !!v3;
     if (mode === 2) { for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256); }
+  }
+  // Hot-swap (mirrors firmware emuHotSwap): rotate to the next of the
+  // Killer's 8 slots, never rewriting the slot being presented.
+  function emuHotSwap(label, v3) {
+    emuSlot = (emuSlot + 1) & 7;
+    emuName = label; emuV3 = !!v3;
+    for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256);
   }
   // ---- soft power (mirrors enterDeepSleep / powerOffFromMenu) ----------------
   function powerOffFlow() {            // hold OK at the menu

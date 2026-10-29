@@ -298,7 +298,10 @@ def page_buttons(pdf):
          ["OK (hold 1 s)", "At the menu: power off. In the library: the "
                            "advanced write-to-tag path"],
          ["BACK", "Cancel, stop emulation, go back one screen"],
-         ["Any button", "Stops an active emulation"]],
+         ["UP / DOWN while emulating", "Hot-swap to the next amiibo without "
+                                       "stopping (uses all 8 emulator slots)"],
+         ["OK or BACK", "Stops an active emulation (any button stops the "
+                        "NDEF-note emulation)"]],
         [30, 90])
     pdf.h2("The menu")
     pdf.table(
@@ -326,7 +329,11 @@ def page_library(pdf):
         "Pick an entry and press OK. The screen shows the tag name and its "
         "slot; the emulator presents the dump with its own unique ID.",
         "Tap the console or phone flat against the halo on the back.",
-        "Press any button to stop.",
+        "While emulating, UP/DOWN hot-swaps to the neighbouring amiibo "
+        "without stopping - each swap moves to the next of the emulator's "
+        "eight slots, so back-to-back console taps can use different "
+        "figures.",
+        "Press OK or BACK to stop.",
     ])
     pdf.h2("The V3 badge")
     pdf.body("Entries marked V3 (such as Kirby Air Riders figures) are the "
