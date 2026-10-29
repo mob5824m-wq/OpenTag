@@ -55,6 +55,7 @@
     <div class="row">PN532Killer present <input type="checkbox" id="simNfc" checked></div>
     <div class="row">Keys loaded <input type="checkbox" id="simKeys"></div>
     <div class="row">Charging (USB-C / Qi) <input type="checkbox" id="simCharging"></div>
+    <div class="row">Battery <input type="number" id="simBattery" min="0" max="5" step="0.05" value="4.05"> V</div>
     <div class="row"><input type="text" id="simNote" value="Hello from OpenTag" maxlength="40"> <button id="setNote">Set pending note</button></div>
     <div class="row">
       <button id="simTap">Simulate: tap NTAG215</button>
@@ -68,6 +69,8 @@
     <div id="statusline">UI state: MENU</div>
     <p class="note">The four round buttons mirror the physical device (UP · DOWN · OK · BACK, west→east on the shell). "Simulate: tap NTAG215" places a tag on the antenna — used by the note-write screen, and (advanced) the amiibo write screen. "Console taps tag" imitates a Switch reading the emulated tag.</p>
     <p class="note">An <b>NDEF note</b> is a short text or web link stored on the device: sync one from the BLE sync page, then "Write NDEF note" copies it to a blank NTAG215 tag (any NFC phone can read it) or "Emulate NDEF note" pretends to be that tag. "Clear NDEF note" wipes the stored note. BACK is the universal exit: cancel a scan, stop emulation, skip the lock prompt, or leave the amiibo library.</p>
+    <p class="note">"Simulate: tap NTAG215" also drives <b>Backup tag</b> and <b>Inspect tag</b> — on the inspector it cycles through three different tags (NTAG215 with a note, blank NTAG213, 4-byte-UID MIFARE UL). The <b>Battery</b> input feeds the optional voltage divider: the header gauge turns red at/below 15%, 3.35&nbsp;V warns, and below 3.25&nbsp;V for 30&nbsp;s the device powers itself off (charging suspends the checks, like the firmware). The optional <b>piezo</b> chirps at tag events — in this page it's counted silently in the hidden #beepLog element (real browsers play a soft square-wave tone).</p>
+    <p class="note"><b>Pairing / OTA sims:</b> <code>document.simPair()</code> shows the PIN overlay an unbonded phone triggers (fixed code 492013 here; random per boot on hardware), <code>document.simPairOk()</code> completes the bond, and <code>document.simOta()</code> runs the Wi-Fi update flow — phases, download progress and the "reboot", with BACK cancelling mid-download.</p>
   </div>
 </div>
 
@@ -144,7 +147,7 @@
   function drawFastHLine(x, y, w, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, 1); }
 
   // ---- device state (mirrors main.cpp globals) -----------------------------
-  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6, POWEROFF:7, BACKUP:8, FACTORY:9 };
+  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6, POWEROFF:7, BACKUP:8, FACTORY:9, INSPECT:10, USBDRIVE:11, OTA:12 };
   let uiState = UI.MENU, menuIndex = 0, uiMessage = '';
   let pendingPresent = true, pendingKind = 'TEXT', pendingValue = 'Hello from OpenTag';
   let bleConnected = true, nfcReady = true, keysReady = false;
@@ -163,13 +166,17 @@
   let poweredOff = false, powerOffTimer = null;
   // travel mode (BLE off), factory-reset confirm clock, backup UID counter
   let travelMode = false, factoryAskedAt = 0, backupUid = 0, charging = false;
+  let vbat = 4.05, battLowSince = 0;
+  let pairingNow = false, pairPin = '492013';   // fixed in the sim for tests
+  let inspValid = false, inspUid = '', inspKind = '', inspNdef = '', inspIdx = 0;
+  let otaPhase = '', otaProgress = 0, otaStep = 0, otaCancelled = false, otaTimer = null;
   // auto-sleep: 3 minutes with no interaction (any draw = activity, which
   // mirrors the firmware's button/BLE/tag activity resets)
   const AUTO_SLEEP_MS = 3 * 60 * 1000;
   let lastActivity = Date.now();
   const statusline = document.getElementById('statusline');
   const offNote = document.getElementById('offNote');
-  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF','BACKUP','FACTORY'];
+  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF','BACKUP','FACTORY','INSPECT','USBDRIVE','OTA'];
   function setStatus(t) { statusline.textContent = 'UI state: ' + stateNames[uiState] + (t ? ' — ' + t : ''); }
 
   // Library display name (mirror of formatAmiiboName in main.cpp): strips
@@ -185,12 +192,50 @@
   // ---- drawScreen port ------------------------------------------------------
   function drawHeader() {
     setTextColor(C.MINT); setCursor(8, 7); print('OPENTAG');
+    if (vbat > 0.5) {
+      let pct = Math.floor((vbat - 3.3) / 0.8 * 100);
+      pct = Math.max(0, Math.min(100, pct));
+      setTextColor(pct <= 15 ? C.RED : C.MUTED);
+      setCursor(58, 7); print(pct + '%');
+    }
     setTextColor(C.MUTED); setCursor(84, 7); print(bleConnected ? 'BLE ON' : 'BLE');
-    drawFastHLine(8, 21, 112, rgb565(0x4208));
+    drawFastHLine(8, 15, 112, rgb565(0x4208));
+  }
+  // Piezo chirp (optional hardware): audible in a real browser, counted in
+  // the hidden #beepLog span so the behaviour tests can see it too.
+  let audioCtx = null;
+  function beep(freq, ms) {
+    try {
+      const log = document.getElementById('beepLog');
+      if (log) log.textContent = String((log.textContent | 0) + 1);
+      const AC = (typeof AudioContext !== 'undefined') ? AudioContext
+               : (typeof webkitAudioContext !== 'undefined') ? webkitAudioContext : null;
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.frequency.value = freq; osc.type = 'square';
+      gain.gain.value = 0.03;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + ms / 1000);
+    } catch (e) { /* headless harness */ }
   }
   function drawScreen() {
     lastActivity = Date.now();   // any interaction draws -> not idle
     fillScreen(C.BG); setTextWrap(false); setTextSize(1); drawHeader();
+
+    // Pairing overlay: the screen is just the code while an unbonded
+    // central runs the PIN exchange (the library is unreachable without it).
+    if (pairingNow) {
+      setTextColor(C.MINT); setCursor(8, 27); print('PAIRING');
+      setTextColor(C.WHITE); setTextSize(2);
+      setCursor((128 - pairPin.length * 12) / 2, 60); print(pairPin);
+      setTextSize(1);
+      setTextColor(C.MUTED); setCursor(8, 96); print('Type this code into');
+      setCursor(8, 108); print('your phone to pair.');
+      setStatus(null);
+      return;
+    }
+
     if (uiState === UI.WAIT_TAG) {
       setTextColor(C.WHITE); setCursor(8, 37); print('Ready to write');
       setTextColor(C.MUTED); setCursor(8, 55); print('Tap an NTAG215 tag');
@@ -269,14 +314,46 @@
       setTextColor(C.RED); setCursor(8, 82); print('This cannot be undone.');
       setTextColor(C.MINT); setCursor(8, 104); print('Hold OK: wipe');
       setCursor(8, 116); print('BACK: cancel');
+    } else if (uiState === UI.INSPECT) {
+      setTextColor(C.MINT); setCursor(8, 27); print('INSPECT TAG');
+      if (!inspValid) {
+        setTextColor(C.MUTED); setCursor(8, 55); print('Tap a tag on the');
+        setCursor(8, 70); print('back to identify it.');
+      } else {
+        setTextColor(C.WHITE); setCursor(8, 45); print('UID ' + inspUid);
+        setTextColor(C.WHITE); setCursor(8, 60); print(inspKind);
+        setTextColor(C.LAVENDER); setCursor(8, 78);
+        if (inspNdef) {
+          print(inspNdef.substring(0, 19));
+          setCursor(8, 90); print(inspNdef.substring(19, 38));
+        } else {
+          print('No NDEF data');
+        }
+      }
+      if (inspValid) { setTextColor(C.MUTED); setCursor(8, 104); print('retap to rescan'); }
+      setTextColor(C.MUTED); setCursor(8, 116); print('BACK: menu');
+    } else if (uiState === UI.USBDRIVE) {
+      setTextColor(C.MINT); setCursor(8, 27); print('USB DRIVE');
+      setTextColor(C.WHITE); setCursor(8, 47); print('The amiibo library');
+      setCursor(8, 59); print('read-only over USB.');
+      setTextColor(C.MUTED); setCursor(8, 80); print('Copy bins off the');
+      setCursor(8, 92); print('device; add via BLE.');
+      setTextColor(C.MINT); setCursor(8, 116); print('OK/BACK: eject');
+    } else if (uiState === UI.OTA) {
+      setTextColor(C.MINT); setCursor(8, 27); print('FIRMWARE UPDATE');
+      setTextColor(C.WHITE); setCursor(8, 55); print(otaPhase);
+      setCursor(8, 75); print(otaProgress + '%');
+      setTextColor(C.MUTED); setCursor(8, 96); print('Do not power off.');
+      setTextColor(C.MINT); setCursor(8, 116); print('BACK: cancel');
     } else if (uiState === UI.POWEROFF) {
       setTextColor(C.WHITE); setCursor(8, 52); print('Powering off');
       setTextColor(C.MINT); setCursor(8, 76); print('BACK: cancel');
     } else {
-      const items = ['Amiibo library', 'Backup tag', 'BLE sync', 'Write NDEF note',
-                     'Emulate NDEF note', 'Clear NDEF note', 'Factory reset'];
-      for (let i = 0; i < 7; i++) {
-        const y = 22 + i * 12;
+      const items = ['Amiibo library', 'Backup tag', 'Inspect tag', 'BLE sync',
+                     'Write NDEF note', 'Emulate NDEF note',
+                     'Clear NDEF note', 'USB drive', 'Factory reset'];
+      for (let i = 0; i < 9; i++) {
+        const y = 18 + i * 10;
         setTextColor(i === menuIndex ? C.MINT : C.MUTED);
         setCursor(8, y); print(i === menuIndex ? '> ' : '  '); print(items[i]);
       }
@@ -366,6 +443,18 @@
       if (state === 'back') cancelPowerOff();
     } else if (uiState === UI.BACKUP) {
       if (state === 'back' || state === 'ok') { uiState = UI.MENU; uiMessage = ''; }
+    } else if (uiState === UI.INSPECT) {
+      if (state === 'back' || state === 'ok') { uiState = UI.MENU; uiMessage = ''; }
+    } else if (uiState === UI.USBDRIVE) {
+      if (state === 'back' || state === 'ok') {  // eject the read-only drive
+        uiState = UI.MENU; uiMessage = 'USB drive ejected';
+      }
+    } else if (uiState === UI.OTA) {
+      if (state === 'back' || state === 'ok') {
+        otaCancelled = true;
+        if (otaTimer) { clearInterval(otaTimer); otaTimer = null; }
+        uiState = UI.MENU; uiMessage = 'Update cancelled';
+      }
     } else if (uiState === UI.FACTORY) {
       // wipe is irreversible: explicit hold, anything else cancels
       if (state === 'ok-hold') { factoryReset(); }
@@ -373,8 +462,8 @@
         uiState = UI.MENU; uiMessage = 'Reset cancelled';
       }
     } else { // MENU
-      if (state === 'up') { menuIndex = (menuIndex + 6) % 7; uiMessage = ''; }
-      if (state === 'down') { menuIndex = (menuIndex + 1) % 7; uiMessage = ''; }
+      if (state === 'up') { menuIndex = (menuIndex + 8) % 9; uiMessage = ''; }
+      if (state === 'down') { menuIndex = (menuIndex + 1) % 9; uiMessage = ''; }
       if (state === 'back-hold') {   // travel mode: BLE advertising off
         travelMode = !travelMode;
         uiMessage = travelMode ? 'Travel mode on' : 'Travel mode off';
@@ -390,18 +479,23 @@
           if (!nfcReady) uiMessage = 'PN532Killer absent';
           else { uiState = UI.BACKUP; uiMessage = ''; }
         } else if (menuIndex === 2) {
+          if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { inspValid = false; uiState = UI.INSPECT; uiMessage = ''; }
+        } else if (menuIndex === 3) {
           if (travelMode) uiMessage = 'Travel: BLE off';
           else uiMessage = bleConnected ? 'Connected: use web sync' : 'OpenTag BLE is advertising';
-        } else if (menuIndex === 3) {
-          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
-          else if (!nfcReady) uiMessage = 'PN532Killer absent';
-          else { uiState = UI.WAIT_TAG; uiMessage = ''; }
         } else if (menuIndex === 4) {
           if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
           else if (!nfcReady) uiMessage = 'PN532Killer absent';
-          else { uiMessage = ''; startEmulation('NDEF note', 1); }
+          else { uiState = UI.WAIT_TAG; uiMessage = ''; }
         } else if (menuIndex === 5) {
+          if (!pendingPresent) uiMessage = 'Sync NDEF over BLE first';
+          else if (!nfcReady) uiMessage = 'PN532Killer absent';
+          else { uiMessage = ''; startEmulation('NDEF note', 1); }
+        } else if (menuIndex === 6) {
           pendingPresent = false; pendingValue = ''; pendingKind = 'TEXT'; uiMessage = 'Pending note cleared';
+        } else if (menuIndex === 7) {
+          enterUsbDriveSim();
         } else {
           uiState = UI.FACTORY; factoryAskedAt = Date.now(); uiMessage = '';
         }
@@ -409,6 +503,47 @@
     }
     drawScreen();
   }
+
+  function chirpSaved() { beep(2000, 60); }
+
+  // USB drive sim: read-only FAT snapshot of the library over the DevKit USB.
+  function enterUsbDriveSim() { uiState = UI.USBDRIVE; uiMessage = ''; beep(1400, 60); }
+  // Inspect sim: retapping cycles through three different tag types.
+  const INSPECT_TAGS = [
+    { uid: '04A1B2C3D4E5F6', kind: 'NTAG215 496 B', ndef: 'Hello from OpenTag note' },
+    { uid: '04112233445566', kind: 'NTAG213 144 B', ndef: '' },
+    { uid: 'E0123456', kind: 'MIFARE UL 48 B', ndef: '' },
+  ];
+  function inspectSimTap() {
+    const t = INSPECT_TAGS[inspIdx % INSPECT_TAGS.length]; inspIdx++;
+    inspValid = true; inspUid = t.uid; inspKind = t.kind; inspNdef = t.ndef;
+    beep(1800, 50); uiMessage = '';
+  }
+  // OTA sim: Wi-Fi -> fetch -> download progress -> install -> reboot.
+  function otaTick() {
+    otaStep++;
+    if (otaStep <= 1) otaPhase = 'Wi-Fi...';
+    else if (otaStep <= 3) otaPhase = 'Fetching release';
+    else if (otaStep <= 15) { otaPhase = 'Downloading'; otaProgress = Math.min(100, (otaStep - 3) * 9); }
+    else if (otaStep === 16) { otaPhase = 'Installing'; otaProgress = 100; uiMessage = 'Update done'; }
+    else if (otaStep >= 19) {
+      // "reboot" into the fresh firmware
+      if (otaTimer) { clearInterval(otaTimer); otaTimer = null; }
+      otaStep = 0; otaProgress = 0; uiState = UI.MENU; menuIndex = 0; uiMessage = '';
+      drawScreen(); return;
+    }
+    drawScreen();
+  }
+  function simOtaStart() {
+    if (otaTimer) clearInterval(otaTimer);
+    otaStep = 0; otaProgress = 0; otaCancelled = false;
+    otaPhase = 'Wi-Fi...'; uiState = UI.OTA; uiMessage = '';
+    otaTimer = setInterval(otaTick, 120);
+    drawScreen();
+  }
+  document.simPair = () => { pairingNow = true; bleConnected = false; drawScreen(); };
+  document.simPairOk = () => { pairingNow = false; bleConnected = true; beep(2400, 80); drawScreen(); };
+  document.simOta = simOtaStart;
 
   function armWrite(name) {
     writeName = name; writeArmed = true; uiState = UI.WRITE_TAG; uiMessage = '';
@@ -449,6 +584,7 @@
     amiCount = amiiboNames.length;
     amiSelected = amiiboNames.indexOf(file);
     uiMessage = 'Saved';
+    chirpSaved();
     uiState = UI.LIBRARY;
   }
 
@@ -538,6 +674,8 @@
   document.getElementById('simBle').onchange = e => { bleConnected = e.target.checked; drawScreen(); };
   document.getElementById('simNfc').onchange = e => { nfcReady = e.target.checked; drawScreen(); };
   document.getElementById('simKeys').onchange = e => { keysReady = e.target.checked; drawScreen(); };
+  const batEl = document.getElementById('simBattery');
+  batEl.oninput = batEl.onchange = e => { vbat = parseFloat(e.target.value) || 0; drawScreen(); };
   document.getElementById('simCharging').onchange = e => {
     charging = e.target.checked;
     if (charging) uiMessage = 'Charging';   // rising edge announces itself
@@ -552,11 +690,12 @@
   };
   document.getElementById('simTap').onclick = () => {
     if (uiState === UI.BACKUP) { backupTappedTag(); drawScreen(); return; }
+    if (uiState === UI.INSPECT) { inspectSimTap(); drawScreen(); return; }
     if (uiState === UI.WAIT_TAG) { uiState = UI.TAG_READY; uiMessage = ''; }
     else if (uiState === UI.WRITE_TAG) {
       // Simulated TagMo-style write: sign, write pages, verify.
       uiMessage = 'Signing + writing'; drawScreen();
-      setTimeout(() => { writeArmed = false; uiState = UI.LOCK_CONFIRM; lockAskedAt = Date.now(); uiMessage = ''; drawScreen(); }, 700);
+      setTimeout(() => { writeArmed = false; uiState = UI.LOCK_CONFIRM; lockAskedAt = Date.now(); uiMessage = ''; beep(2400, 80); drawScreen(); }, 700);
       return;
     } else if (uiState === UI.MENU) uiMessage = 'Nothing waiting for a tag';
     else uiMessage = 'Tag ignored in this state';
@@ -598,6 +737,19 @@
     if (uiState === UI.FACTORY && Date.now() - factoryAskedAt > 15000) {
       uiState = UI.MENU; uiMessage = 'Reset cancelled'; drawScreen();
     }
+    // battery telemetry: warn once below 3.35 V, protect the cell at
+    // <3.25 V sustained 30 s (charging suspends the checks, like the firmware)
+    if (vbat > 0.5 && !charging && !poweredOff && uiState !== UI.POWEROFF) {
+      if (vbat < 3.35) {
+        if (battLowSince === 0) {
+          battLowSince = Date.now();
+          uiMessage = 'Battery low'; beep(1200, 200);
+          drawScreen();
+        } else if (vbat < 3.25 && Date.now() - battLowSince > 30000) {
+          powerOffFlow();
+        }
+      } else battLowSince = 0;
+    } else battLowSince = 0;
     // auto-sleep after 3 idle minutes (mirrors the firmware's kAutoSleepMs)
     if (!poweredOff && uiState !== UI.POWEROFF &&
         Date.now() - lastActivity > AUTO_SLEEP_MS) powerOffFlow();
@@ -606,5 +758,6 @@
   drawScreen();
 })();
 </script>
+  <span id="beepLog" hidden></span>
 </body>
 </html>

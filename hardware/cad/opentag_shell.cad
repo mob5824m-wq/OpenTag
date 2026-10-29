@@ -38,6 +38,9 @@ inner_w     = 94;     // interior width (carrier PCB is 90 wide)
 inner_l     = 132;    // interior length (PCB zone + south bay)
 inner_d     = 27.5;   // interior depth (OLED top 26.1 + 1.4 clearance)
 corner      = 8;      // exterior corner radius
+outer_w = inner_w + 2*wall;     // 97.6 - shell envelope (stand + docs use it)
+outer_l = inner_l + 2*wall;     // 135.6
+outer_d = inner_d + wall;       // 29.3 - front shell depth incl. back plate
 
 // ---- carrier PCB (90 x 60, holes at ±41.5 / ±25.5) ---------------------------
 pcb_w = 90; pcb_l = 60; pcb_t = 1.6;
@@ -121,23 +124,36 @@ lp_z = 2.5;                     // bore axis height (mid-wall over the tray)
 lug_cx = -51.5; lug_cy = 60; lug_w = 9; lug_l = 11; lug_r = 3; lug_hole = 4.2;
 
 // ---- desk stand (optional print) ------------------------------------------
-// The device rests chin-down (lanyard lug + USB-C up): back face on the
-// panel's top edge, bottom-back edge on the base, front face caught by
-// the lip's top-rear corner. With shell thickness t and cradle gap
-// g = stand_panel_front - (stand_lip_front + stand_lip_t) the lean is
-//   g = (panel_h - lip_h) tan(theta) + t / cos(theta)
-// 43.6 = 78 tan(theta) + 29.3 / cos(theta)  ->  theta ~ 10 deg.
-// The charge port ends up above the panel top, so it charges while docked.
+// The device leans back stand_theta from vertical with the screen facing
+// up-forward (readable while docked): OLED end down at the lip, chin up at
+// the panel. It rests on exactly three contacts, all closed by the same
+// relation. With shell thickness t = outer_d and the lip catching the
+// screen face at its top-rear corner:
+//   sin(theta) = lip_h / t          (theta = asin(5/29.3) = 9.82 deg)
+//   * back face on the panel's TOP EDGE at z = base_t + panel_h (below it
+//     the back face clears the panel wall, by panel_h*tan(theta) at the base)
+//   * screen face on the lip's top-rear corner (y_lip_rear, base_t + lip_h)
+//   * the OLED-end face's bottom-rear corner lands on the base top at
+//     y_b0 = panel_front - panel_h*tan(theta) = 35.8
+// The charge port (west wall, chin end) ends up high, just behind the panel
+// top edge, so the device still charges while docked with the cable dropped
+// behind the stand. cad_to_stl.py re-checks all of this with a docked-shell
+// interference gate.
 stand_w = 112;                  // 97.6 shell + finger room each side
 stand_base_d = 66.8; stand_base_t = 2.4; stand_base_r = 3;
-stand_front_y = -10.4;          // base front edge (18.4 mm scoop before the lip)
-stand_panel_t = 2.4; stand_panel_h = 92; stand_panel_r = 1;
-stand_brace_d = 8; stand_brace_h = 40;    // gusset at the panel's lower front
+stand_front_y = -10.4;          // base front edge (14.9 mm scoop before the lip)
+stand_panel_t = 2.4; stand_panel_h = 105; stand_panel_r = 1;
+stand_panel_front = 54;         // panel front face (y); top edge z = 107.4
+stand_lip_t = 2.4; stand_lip_h = 5; stand_lip_r = 1;
+stand_theta = asin(stand_lip_h / outer_d);   // 9.82 deg lean from vertical
+stand_lip_front = stand_panel_front
+                - (stand_panel_h - stand_lip_h) * tan(stand_theta)
+                - outer_d / cos(stand_theta) - stand_lip_t;  // 4.54
+stand_brace_d = 4; stand_brace_h = 48;    // slim gusset under the panel's
+                                // lower front (keeps the thin panel
+                                // printable; the docked device clears it)
 stand_brace_ov = 0.5;           // brace fuses 0.5 mm into the panel (a
                                 // face-touching union leaves coincident faces)
-stand_lip_t = 2.4; stand_lip_h = 14; stand_lip_r = 1;
-stand_lip_front = 8;            // lip front face (y)
-stand_panel_front = 54;         // panel front face (y); cradle gap 43.6
 
 // ---- back-plate cutouts / supports ------------------------------------------------
 svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
@@ -193,9 +209,7 @@ brand_font = [
   ["Z", [97, 89, 73, 77, 67]]];
 
 // ---- derived ----------------------------------------------------------------------
-outer_w = inner_w + 2*wall;
-outer_l = inner_l + 2*wall;
-outer_d = inner_d + wall;oled_top = standoff_h + pcb_t + oled_mod_h;
+oled_top = standoff_h + pcb_t + oled_mod_h;
 // screw line: front-shell bosses and back-plate countersinks share these.
 // screw_dx fuses the d7 boss ~1.2 mm into the corner wall; screw_dy keeps
 // 0.6 mm clearance to the PCB standoffs (+/-41.5, -55.5/-4.5, r 3.75) and
@@ -456,15 +470,16 @@ module desk_stand() {
   // base: rear edge flush with the panel's back face
   translate([0, stand_front_y + stand_base_d/2, 0])
     rbox(stand_w, stand_base_d, stand_base_t, stand_base_r);
-  // back panel: the device's back face rests on its top edge
+  // back panel: the docked device's back face rests on its top edge
+  // (z = base_t + panel_h = 107.4; the charge port ends up just behind it)
   translate([0, stand_panel_front + stand_panel_t/2, stand_base_t])
     rbox(stand_w, stand_panel_t, stand_panel_h, stand_panel_r);
-  // brace: solid gusset tying the panel's lower front to the base (also
-  // keeps the thin panel printable); the device's bottom edge stops 8.4
-  // mm short of it at the ~10 deg lean
+  // brace: slim gusset tying the panel's lower front to the base (also
+  // keeps the thin panel printable); at the 9.82 deg lean the docked
+  // device's back plane clears its front face by ~6 mm at the brace top
   translate([-stand_w/2, stand_panel_front - stand_brace_d, stand_base_t])
     cube([stand_w, stand_brace_d + stand_brace_ov, stand_brace_h]);
-  // front lip: its top-rear corner catches the device's front face
+  // front lip: its top-rear corner catches the docked device's screen face
   translate([0, stand_lip_front + stand_lip_t/2, stand_base_t])
     rbox(stand_w, stand_lip_t, stand_lip_h, stand_lip_r);
 }

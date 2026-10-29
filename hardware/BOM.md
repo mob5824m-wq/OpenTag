@@ -13,6 +13,8 @@
 | 6 | MT3608 boost module (adjustable) | 1 | Set to 5.0–5.1 V before installation |
 | 7 | 1N5819 Schottky diode (DO-41) | 2 | One on the boost output; the second (optional) ORs the Qi receiver into the TP4056 input |
 | 7b | Resistor 22 kΩ (optional) | 1 | Charge-sense wire: TP4056 /CHRG → GPIO21, lights the on-screen bolt |
+| 7c | Resistor 100 kΩ (optional) | 2 | Battery divider: B+ ─ 100k ─┬─ 100k ─ GND, midpoint → GPIO4 (header % gauge + low-battery auto-off) |
+| 7d | Passive piezo buzzer, 3–5 V, ~12 mm (optional) | 1 | GPIO5 → buzzer → GND; chirps on backup, verified writes, pairing, low battery |
 | 8 | SPDT mini toggle switch, PCB mount, ≥1 A (MTS-102 style, 3 pins @ 2.54 mm) | 1 | Master battery cut. The firmware's "hold OK" soft-off is deep sleep, not a disconnect — the DevKitC's regulator and the boost still draw a few mA, so flip this switch for storage |
 
 ## PCB & wiring

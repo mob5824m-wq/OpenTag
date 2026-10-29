@@ -3,6 +3,12 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <NimBLEDevice.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <Update.h>
+#include <USB.h>
+#include <USBMSC.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1351.h>
 #include <esp_sleep.h>
@@ -74,6 +80,12 @@ constexpr int BUTTON_UP = 42, BUTTON_DOWN = 2, BUTTON_OK = 1, BUTTON_BACK = 13;
 // charging. A 22k series resistor keeps the pin between 0 and ~3.3 V, and
 // the internal pullup makes an unwired pin read HIGH (not charging).
 constexpr int CHG_SENSE = 21;   // J3-18
+// Battery telemetry (optional): 100k/100k divider from B+ to GND, midpoint
+// to GPIO4 (ADC1_CH3, J1-4). Raw < ~0.1 V means no divider fitted.
+constexpr int BATT_SENSE = 4;   // J1-4
+// Piezo (optional): passive buzzer between GPIO5 and GND; a soft chirp
+// confirms tag events. Unwired = silent.
+constexpr int PIEZO = 5;        // J1-5
 }
 
 namespace BleIds {
@@ -111,6 +123,29 @@ static String uiMessage;
 static bool charging = false;
 static uint8_t chgDebounce = 0;
 static uint32_t chgPollMs = 0;
+
+// Battery telemetry (optional divider on BATT_SENSE).
+static float battVolts = 0;          // 0 = no divider fitted
+static uint32_t battPollMs = 0;
+static uint32_t battLowSinceMs = 0;
+
+// BLE pairing: this boot's 6-digit passkey, shown on the OLED while an
+// unbonded central connects. Bonded phones reconnect without it.
+static bool pairingNow = false;
+static char pairPin[8] = "000000";
+
+// Tag inspector state (menu: Inspect tag).
+static bool inspValid = false;
+static uint8_t inspUid[7] = {0};
+static uint8_t inspUidLen = 0;
+static char inspKind[20] = "";
+static char inspNdef[40] = "";
+
+// Wi-Fi OTA state (triggered from the web page after Wi-Fi provisioning).
+static bool otaRequested = false;
+static volatile bool otaCancelled = false;
+static uint8_t otaProgress = 0;
+static char otaPhase[20] = "";
 
 // ---- BLE command mailbox (consumed in loop()) ----
 static char bleCommand[248] = {0};
@@ -172,8 +207,9 @@ static size_t amiCount = 0;
 static size_t amiSelected = 0;
 static size_t amiTop = 0;
 
-enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_BACKUP, UI_EMULATE,
-                         UI_WRITE_TAG, UI_LOCK_CONFIRM, UI_FACTORY, UI_POWEROFF };
+enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_BACKUP, UI_INSPECT,
+                         UI_EMULATE, UI_WRITE_TAG, UI_LOCK_CONFIRM, UI_FACTORY, UI_USBDRIVE,
+                         UI_OTA, UI_POWEROFF };
 static uint8_t uiState = UI_MENU;
 
 static unsigned long lastDraw = 0;
@@ -181,6 +217,28 @@ static unsigned long lastNfcPoll = 0;
 
 static const uint16_t BG = 0x1082, MINT = 0xB7EF, LAVENDER = 0xC5DF;
 static const uint16_t WHITE = 0xFFFF, MUTED = 0x9CF3, RED = 0xF986;
+
+void drawScreen(bool force);
+
+// Soft confirmation chirp (optional piezo on GPIO5; unwired = silent).
+static void chirp(uint16_t freq, uint16_t ms) { tone(Pins::PIEZO, freq, ms); }
+
+// Battery telemetry: 100k/100k divider, 2 s cadence. A raw reading under
+// ~0.1 V means the divider is not fitted -> hide the gauge entirely.
+static void pollBattery() {
+  const int raw = analogRead(Pins::BATT_SENSE);
+  if (raw < 60) { battVolts = 0; battLowSinceMs = 0; return; }
+  battVolts = raw * (3.3f / 4095.0f) * 2.0f;
+}
+
+static int batteryPercent() {
+  if (battVolts <= 0.5f) return -1;
+  // floor, matching the web preview (never over-report the cell)
+  int pct = (int)((battVolts - 3.30f) / 0.80f * 100.0f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return pct;
+}
 
 void setStatus(const char *value) {
   if (statusCharacteristic) { statusCharacteristic->setValue(value); statusCharacteristic->notify(); }
@@ -319,7 +377,28 @@ class DataCallbacks final : public NimBLECharacteristicCallbacks {
 };
 
 class ServerCallbacks final : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer *, NimBLEConnInfo &) override { bleConnected = true; }
+  void onConnect(NimBLEServer *, NimBLEConnInfo &ci) override {
+    if (ci.isBonded()) {
+      bleConnected = true;
+    } else {
+      // Unbonded central: show this boot's passkey and demand pairing.
+      // A wrong PIN never reaches the GATT commands.
+      pairingNow = true;
+      bleConnected = false;
+      drawScreen(true);
+      NimBLEDevice::startSecurity(ci.getConnHandle());
+    }
+  }
+  void onAuthenticationComplete(NimBLEConnInfo &ci) override {
+    pairingNow = false;
+    if (ci.isBonded()) {
+      bleConnected = true;
+      chirp(2400, 80);
+    } else {
+      NimBLEDevice::getServer()->disconnect(ci.getConnHandle());
+    }
+    drawScreen(true);
+  }
   void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int) override {
     bleConnected = false;
     if (!travelMode) NimBLEDevice::startAdvertising();
@@ -329,6 +408,14 @@ class ServerCallbacks final : public NimBLEServerCallbacks {
 void beginBle() {
   NimBLEDevice::init("OpenTag");
   NimBLEDevice::setMTU(247);
+  // Pairing: bond + MITM + secure connections, display-only IO cap. The
+  // passkey is random per boot and shown on the OLED while pairing; bonded
+  // phones reconnect silently. Factory reset clears the bonds (NVS).
+  NimBLEDevice::setSecurityAuth(true, true, true);
+  NimBLEDevice::setSecurityIOCap(0);   // display only
+  const uint32_t pin = 100000 + (uint32_t)random(900000);
+  NimBLEDevice::setSecurityPasskey(pin);
+  snprintf(pairPin, sizeof(pairPin), "%06lu", (unsigned long)pin);
   NimBLEServer *server = NimBLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
   NimBLEService *service = server->createService(BleIds::SERVICE);
@@ -604,6 +691,7 @@ static void runTagBackup() {
   snprintf(status, sizeof(status), "OK:backup:%s", candidate);
   setStatus(status);
   uiMessage = "Saved";
+  chirp(2000, 60);
   listAmiibos();
   for (size_t i = 0; i < amiCount; i++)
     if (!strcmp(amiNames[i], candidate)) { amiSelected = i; break; }
@@ -643,13 +731,375 @@ static void factoryReset() {
 }
 
 // ---------------------------------------------------------------------------
+// Tag inspector: identify any presented Type 2 tag (menu: Inspect tag)
+// ---------------------------------------------------------------------------
+
+static void inspectTag(const uint8_t *uid, uint8_t uidLen) {
+  memcpy(inspUid, uid, uidLen < 7 ? uidLen : 7);
+  inspUidLen = uidLen < 7 ? uidLen : 7;
+  strlcpy(inspKind, "Type 2 tag", sizeof(inspKind));
+  inspNdef[0] = 0;
+  uint8_t page[16] = {0};
+  if (nfc.ntagReadPage(3, page) && page[0] == 0xE1) {
+    const uint8_t sz = page[2];
+    const char *model =
+        sz == 0x3E ? "NTAG215" : sz == 0x12 ? "NTAG213" :
+        sz == 0x6D ? "NTAG216" : sz == 0x06 ? "MIFARE UL" : "NTAG2";
+    snprintf(inspKind, sizeof(inspKind), "%s %u B", model, (unsigned)sz * 8);
+  }
+  // NDEF TLV starts at page 4 (Type 2 mapping): 0x03 <len> <record...>
+  uint8_t tlv[32] = {0};
+  if (nfc.ntagReadPage(4, tlv) && tlv[0] == 0x03) {
+    uint16_t plen = tlv[1];
+    const uint8_t *rec = tlv + 2;
+    if (plen == 0xFF) { plen = ((uint16_t)tlv[2] << 8) | tlv[3]; rec = tlv + 4; }
+    if (plen >= 3) {
+      const uint8_t hdr = rec[0];
+      const uint8_t typeLen = rec[1];
+      const uint8_t idLen = (hdr & 0x08) ? rec[3] : 0;
+      const size_t head = 3 + ((hdr & 0x08) ? 1 : 0) + typeLen + idLen;
+      // Text/URI records carry a status byte before the payload.
+      size_t skip = 0;
+      if ((hdr & 0x07) == 1 && typeLen == 1) skip = 1;
+      size_t n = 0;
+      for (size_t i = head + skip; i < (size_t)2 + plen && i < sizeof(tlv) &&
+                                  n < sizeof(inspNdef) - 1; ++i) {
+        const char c = (char)tlv[i];
+        if (c == 0) break;
+        if (c >= 0x20 && c < 0x7F) inspNdef[n++] = c;
+      }
+      inspNdef[n] = 0;
+    }
+  }
+  inspValid = true;
+  chirp(1800, 50);
+  uiMessage = "";
+  drawScreen(true);
+}
+
+// ---------------------------------------------------------------------------
+// USB drive mode: read-only FAT12 snapshot of the amiibo library
+// ---------------------------------------------------------------------------
+
+// A 1 MiB FAT12 volume is built in PSRAM from /amiibo when the mode starts,
+// then served read-only over the DevKit's USB-C port (TinyUSB MSC). The
+// on-device LittleFS stays mounted and live - the USB view is a snapshot,
+// and BLE uploads are refused until the drive is ejected.
+#define USB_DISK_SECTORS 2048         // 1 MiB
+#define USB_FAT_SECTORS 6
+#define USB_ROOT_SECTORS 8            // 128 entries
+#define USB_DATA_START (1 + USB_FAT_SECTORS + USB_ROOT_SECTORS)
+
+static uint8_t *usbImage = nullptr;
+static USBMSC usbMsc;
+
+static void fat12Set(uint8_t *fat, uint32_t cl, uint32_t val) {
+  const uint32_t off = cl + cl / 2;
+  if (cl & 1) {
+    fat[off] = (fat[off] & 0x0F) | (uint8_t)((val & 0x0F) << 4);
+    fat[off + 1] = (uint8_t)((val >> 4) & 0xFF);
+  } else {
+    fat[off] = (uint8_t)(val & 0xFF);
+    fat[off + 1] = (fat[off + 1] & 0xF0) | (uint8_t)((val >> 8) & 0x0F);
+  }
+}
+
+// 8.3 name for the FAT root directory; `variant` disambiguates collisions.
+static void make83(const char *name, int variant, char out[12]) {
+  char base[9] = "        ";
+  char ext[4] = "   ";
+  const char *dot = strrchr(name, '.');
+  size_t bl = dot ? (size_t)(dot - name) : strlen(name);
+  if (dot && dot[1]) strlcpy(ext, dot + 1, sizeof(ext));
+  size_t n = 0;
+  for (size_t i = 0; i < bl && n < (variant ? 6u : 8u); ++i) {
+    char c = name[i];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) base[n++] = c;
+  }
+  if (variant) {
+    base[n++] = '~';
+    base[n++] = (char)('0' + (variant % 10));
+  }
+  memcpy(out, base, 8);
+  memcpy(out + 8, ext, 3);
+  out[11] = 0;
+}
+
+static bool buildFat12Image() {
+  usbImage = (uint8_t *)malloc((size_t)USB_DISK_SECTORS * 512);
+  if (!usbImage) return false;
+  memset(usbImage, 0, (size_t)USB_DISK_SECTORS * 512);
+
+  // Boot sector (FAT12, following the TinyUSB MSC example layout).
+  uint8_t *bs = usbImage;
+  bs[0] = 0xEB; bs[1] = 0x3C; bs[2] = 0x90;
+  memcpy(bs + 3, "OPENTAG ", 8);                       // OEM
+  bs[11] = 512 & 0xFF; bs[12] = 512 >> 8;             // bytes/sector
+  bs[13] = 1;                                         // sectors/cluster
+  bs[14] = 1; bs[15] = 0;                             // reserved sectors
+  bs[16] = 1;                                         // FAT copies
+  bs[17] = 128; bs[18] = 0;                           // root entries
+  bs[19] = USB_DISK_SECTORS & 0xFF; bs[20] = USB_DISK_SECTORS >> 8;
+  bs[21] = 0xF8;                                      // media descriptor
+  bs[22] = USB_FAT_SECTORS; bs[23] = 0;               // sectors per FAT
+  bs[24] = 1; bs[25] = 0;                             // sectors/track
+  bs[26] = 1; bs[27] = 0;                             // heads
+  bs[36] = 0x00;                                      // drive number
+  bs[38] = 0x29;                                      // extended boot sig
+  bs[39] = 0x4F; bs[40] = 0x54; bs[41] = 0x41; bs[42] = 0x47;  // volume id
+  memcpy(bs + 43, "OPENTAG USB ", 11);                // volume label
+  memcpy(bs + 54, "FAT12   ", 8);
+  bs[510] = 0x55; bs[511] = 0xAA;
+
+  uint8_t *fat = usbImage + 512;
+  fat12Set(fat, 0, 0xFF8);
+  fat12Set(fat, 1, 0xFFF);
+
+  uint8_t *root = usbImage + (size_t)(1 + USB_FAT_SECTORS) * 512;
+  // Volume label as the first root entry.
+  memcpy(root, "OPENTAG USB ", 11);
+  root[11] = 0x08;                                    // volume label attr
+
+  static const char kReadme[] =
+      "OpenTag amiibo library (read-only snapshot).\r\n"
+      "Copy your .bin dumps OFF the device here; load new ones over BLE.\r\n";
+  const uint32_t firstCluster = 2;
+  const char *files[Amiibo::kMaxFiles + 1];           // +1 for README
+  const char *names[Amiibo::kMaxFiles + 1];
+  size_t nFiles = 0;
+  File dir = LittleFS.open(Amiibo::kDir);
+  if (dir) {
+    for (File f = dir.openNextFile(); f && nFiles < Amiibo::kMaxFiles;
+         f = dir.openNextFile()) {
+      if (!f.isDirectory() && !String(f.name()).endsWith(".rnd")) {
+        names[nFiles] = strrchr(f.name(), '/');
+        names[nFiles] = names[nFiles] ? names[nFiles] + 1 : f.name();
+        files[nFiles++] = f.name();
+      } else {
+        f.close();
+      }
+    }
+    dir.close();
+  }
+  uint32_t cluster = firstCluster;
+  uint8_t *entry = root + 32;                         // after the label
+  size_t entryCount = 1;
+  for (size_t i = 0; i <= nFiles; ++i) {              // i == nFiles -> README
+    size_t size;
+    if (i == nFiles) {
+      size = sizeof(kReadme) - 1;
+    } else {
+      File f = LittleFS.open(files[i], "r");
+      if (!f) continue;
+      size = f.size();
+      if (size > 65536) size = 65536;
+    }
+    const uint32_t ncl = (uint32_t)((size + 511) / 512);
+    if (cluster + ncl > USB_DISK_SECTORS - USB_DATA_START ||
+        entryCount >= 128) break;                     // volume full
+    char shortName[12];
+    int variant = 0;
+    bool clash;
+    do {
+      make83(i == nFiles ? "README.TXT" : names[i], variant++, shortName);
+      clash = false;
+      for (const uint8_t *e = root + 32; e < entry; e += 32)
+        if (memcmp(e, shortName, 11) == 0) { clash = true; break; }
+    } while (clash && variant < 10);
+    memcpy(entry, shortName, 11);
+    entry[11] = 0x20;                                 // archive
+    entry[26] = cluster & 0xFF; entry[27] = cluster >> 8;
+    entry[28] = size & 0xFF; entry[29] = (size >> 8) & 0xFF;
+    entry[30] = (size >> 16) & 0xFF; entry[31] = (size >> 24) & 0xFF;
+    uint8_t *data = usbImage + (size_t)(USB_DATA_START + cluster - 2) * 512;
+    if (i == nFiles) {
+      memcpy(data, kReadme, size);
+    } else {
+      File f = LittleFS.open(files[i], "r");
+      if (f) { f.read(data, size); f.close(); }
+    }
+    for (uint32_t c = 0; c < ncl; ++c)
+      fat12Set(fat, cluster + c, cluster + c + 1);
+    fat12Set(fat, cluster + ncl - 1, 0xFFF);          // end of chain
+    cluster += ncl;
+    entry += 32;
+    entryCount++;
+  }
+  return true;
+}
+
+static int32_t usbMscRead(uint32_t lba, uint32_t offset, void *buffer, uint32_t bufsize) {
+  if (!usbImage || lba >= USB_DISK_SECTORS) return -1;
+  const size_t avail = (size_t)(USB_DISK_SECTORS - lba) * 512 - offset;
+  const size_t n = bufsize < avail ? bufsize : avail;
+  memcpy(buffer, usbImage + (size_t)lba * 512 + offset, n);
+  return (int32_t)n;
+}
+
+static int32_t usbMscWrite(uint32_t, uint32_t, uint8_t *, uint32_t) {
+  return -1;                                          // read-only volume
+}
+
+static bool usbMscStartStop(uint8_t, bool, bool) { return true; }
+
+static void enterUsbDrive() {
+  if (!buildFat12Image()) {
+    uiMessage = "USB drive failed";
+    drawScreen(true);
+    return;
+  }
+  usbMsc.vendorID("OpenTag");
+  usbMsc.productID("amiibo library");
+  usbMsc.productRevision("1.0");
+  usbMsc.onRead(usbMscRead);
+  usbMsc.onWrite(usbMscWrite);
+  usbMsc.onStartStop(usbMscStartStop);
+  usbMsc.mediaPresent(true);
+  if (!usbMsc.begin(USB_DISK_SECTORS, 512)) {
+    free(usbImage); usbImage = nullptr;
+    uiMessage = "USB drive failed";
+    drawScreen(true);
+    return;
+  }
+  uiState = UI_USBDRIVE;
+  uiMessage = "";
+  chirp(2200, 60);
+  drawScreen(true);
+}
+
+static void exitUsbDrive() {
+  usbMsc.end();
+  usbMsc.mediaPresent(false);
+  free(usbImage);
+  usbImage = nullptr;
+  uiState = UI_MENU;
+  uiMessage = "USB drive ejected";
+  drawScreen(true);
+}
+
+// ---------------------------------------------------------------------------
+// Wi-Fi OTA: credentials provisioned over BLE, update started from the web
+// page (OTA:START). Downloads the latest GitHub release into the inactive
+// app slot and reboots into it; the filesystem is untouched.
+// ---------------------------------------------------------------------------
+
+static const char *kOtaApiUrl =
+    "https://api.github.com/repos/mob5824m-wq/OpenTag/releases/latest";
+
+static void otaProgressCb(size_t done, size_t total) {
+  otaProgress = total ? (uint8_t)(done * 100 / total) : 0;
+  if (digitalRead(Pins::BUTTON_BACK) == LOW || digitalRead(Pins::BUTTON_OK) == LOW)
+    otaCancelled = true;
+  drawScreen(true);
+}
+
+static void runOtaUpdate() {
+  const String ssid = prefs.getString("wssid", "");
+  const String pass = prefs.getString("wpass", "");
+  if (!ssid.length()) { uiState = UI_MENU; uiMessage = "No Wi-Fi saved"; drawScreen(true); return; }
+  otaCancelled = false;
+  otaProgress = 0;
+  strlcpy(otaPhase, "Wi-Fi...", sizeof(otaPhase));
+  drawScreen(true);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pass.c_str());
+  const uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (otaCancelled || millis() - t0 > 20000) {
+      WiFi.disconnect();
+      uiState = UI_MENU;
+      uiMessage = otaCancelled ? "Update cancelled" : "Wi-Fi failed";
+      drawScreen(true);
+      return;
+    }
+    delay(100);
+  }
+
+  strlcpy(otaPhase, "Fetching release", sizeof(otaPhase));
+  drawScreen(true);
+  WiFiClientSecure client;
+  client.setInsecure();   // same trust level as the USB updater (see README)
+  HTTPClient http;
+  http.begin(client, kOtaApiUrl);
+  http.addHeader("User-Agent", "OpenTag-OTA");
+  const int code = http.GET();
+  String body = code == 200 ? http.getString() : String();
+  http.end();
+
+  char url[192] = "";
+  int pos = 0;
+  while ((pos = body.indexOf("browser_download_url", pos)) >= 0) {
+    const int q1 = body.indexOf('"', pos + 20);
+    const int q2 = body.indexOf('"', q1 + 1);
+    if (q1 < 0 || q2 < 0) break;
+    const String asset = body.substring(q1 + 1, q2);
+    if (asset.endsWith(".bin") && asset.length() < sizeof(url)) {
+      strlcpy(url, asset.c_str(), sizeof(url));
+      break;
+    }
+    pos = q2;
+  }
+  if (!url[0]) {
+    uiState = UI_MENU;
+    uiMessage = "No release found";
+    drawScreen(true);
+    return;
+  }
+
+  strlcpy(otaPhase, "Downloading", sizeof(otaPhase));
+  otaProgress = 0;
+  drawScreen(true);
+  http.begin(client, url);
+  if (http.GET() != 200) {
+    http.end();
+    uiState = UI_MENU;
+    uiMessage = "Download failed";
+    drawScreen(true);
+    return;
+  }
+  const int total = http.getSize();
+  if (total <= 0 || !Update.begin(total)) {
+    http.end();
+    uiState = UI_MENU;
+    uiMessage = "Update begin failed";
+    drawScreen(true);
+    return;
+  }
+  Update.onProgress(otaProgressCb);
+  const size_t written = Update.writeStream(*http.getStreamPtr());
+  http.end();
+  const bool ok = written > 0 && Update.end(true);
+  if (otaCancelled || !ok) {
+    uiState = UI_MENU;
+    uiMessage = otaCancelled ? "Update cancelled" : "Update failed";
+    drawScreen(true);
+    return;
+  }
+  strlcpy(otaPhase, "Installing", sizeof(otaPhase));
+  otaProgress = 100;
+  uiMessage = "Update done";
+  drawScreen(true);
+  delay(1500);
+  ESP.restart();                                       // boots the new slot
+}
+
+// ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
 
 void drawHeader() {
   oled.setTextColor(MINT); oled.setCursor(8, 7); oled.print("OPENTAG");
+  const int pct = batteryPercent();
+  if (pct >= 0) {
+    char buf[6];
+    snprintf(buf, sizeof(buf), "%d%%", pct);
+    oled.setTextColor(pct <= 15 ? RED : MUTED);
+    oled.setCursor(58, 7); oled.print(buf);
+  }
   oled.setTextColor(MUTED); oled.setCursor(84, 7); oled.print(bleConnected ? "BLE ON" : "BLE");
-  oled.drawFastHLine(8, 21, 112, 0x4208);
+  oled.drawFastHLine(8, 15, 112, 0x4208);
 }
 
 void drawScreen(bool force = false) {
@@ -659,6 +1109,19 @@ void drawScreen(bool force = false) {
   oled.setTextWrap(false);
   oled.setTextSize(1);
   drawHeader();
+
+  // Pairing overlay: while an unbonded central runs the PIN exchange, the
+  // screen is just the code (it never reaches the library otherwise).
+  if (pairingNow) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("PAIRING");
+    oled.setTextColor(WHITE); oled.setTextSize(2);
+    const int w = (int)strlen(pairPin) * 12;
+    oled.setCursor((128 - w) / 2, 60); oled.print(pairPin);
+    oled.setTextSize(1);
+    oled.setTextColor(MUTED); oled.setCursor(8, 96); oled.print("Type this code into");
+    oled.setCursor(8, 108); oled.print("your phone to pair.");
+    return;
+  }
 
   if (uiState == UI_WAIT_TAG) {
     oled.setTextColor(WHITE); oled.setCursor(8, 37); oled.print("Ready to write");
@@ -768,15 +1231,53 @@ void drawScreen(bool force = false) {
     oled.setTextColor(RED); oled.setCursor(8, 82); oled.print("This cannot be undone.");
     oled.setTextColor(MINT); oled.setCursor(8, 104); oled.print("Hold OK: wipe");
     oled.setCursor(8, 116); oled.print("BACK: cancel");
+  } else if (uiState == UI_INSPECT) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("INSPECT TAG");
+    if (!inspValid) {
+      oled.setTextColor(MUTED); oled.setCursor(8, 55); oled.print("Tap a tag on the");
+      oled.setCursor(8, 70); oled.print("back to identify it.");
+    } else {
+      char line[24];
+      oled.setTextColor(WHITE); oled.setCursor(8, 45); oled.print("UID ");
+      for (int i = 0; i < inspUidLen; ++i) {
+        snprintf(line, sizeof(line), "%02X", inspUid[i]);
+        oled.print(line);
+      }
+      oled.setTextColor(WHITE); oled.setCursor(8, 60); oled.print(inspKind);
+      oled.setTextColor(LAVENDER); oled.setCursor(8, 78);
+      if (inspNdef[0]) {
+        oled.print(String(inspNdef).substring(0, 19));
+        oled.setCursor(8, 90); oled.print(String(inspNdef).substring(19, 38));
+      } else {
+        oled.print("No NDEF data");
+      }
+    }
+    oled.setCursor(8, 104); oled.print("retap to rescan");
+      oled.setTextColor(MUTED); oled.setCursor(8, 116); oled.print("BACK: menu");
+  } else if (uiState == UI_USBDRIVE) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("USB DRIVE");
+    oled.setTextColor(WHITE); oled.setCursor(8, 47); oled.print("The amiibo library");
+    oled.setCursor(8, 59); oled.print("read-only over USB.");
+    oled.setTextColor(MUTED); oled.setCursor(8, 80); oled.print("Copy bins off the");
+    oled.setCursor(8, 92); oled.print("device; add via BLE.");
+    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("OK/BACK: eject");
+  } else if (uiState == UI_OTA) {
+    oled.setTextColor(MINT); oled.setCursor(8, 27); oled.print("FIRMWARE UPDATE");
+    oled.setTextColor(WHITE); oled.setCursor(8, 55); oled.print(otaPhase);
+    char pctLine[8];
+    snprintf(pctLine, sizeof(pctLine), "%u%%", (unsigned)otaProgress);
+    oled.setCursor(8, 75); oled.print(pctLine);
+    oled.setTextColor(MUTED); oled.setCursor(8, 96); oled.print("Do not power off.");
+    oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: cancel");
   } else if (uiState == UI_POWEROFF) {
     oled.setTextColor(WHITE); oled.setCursor(8, 52); oled.print("Powering off");
     oled.setTextColor(MINT); oled.setCursor(8, 76); oled.print("BACK: cancel");
   } else {
-    const char *items[] = {"Amiibo library", "Backup tag", "BLE sync",
+    const char *items[] = {"Amiibo library", "Backup tag", "Inspect tag", "BLE sync",
                            "Write NDEF note", "Emulate NDEF note",
-                           "Clear NDEF note", "Factory reset"};
-    for (int i = 0; i < 7; ++i) {
-      const int y = 22 + i * 12;
+                           "Clear NDEF note", "USB drive", "Factory reset"};
+    for (int i = 0; i < 9; ++i) {
+      const int y = 18 + i * 10;
       oled.setTextColor(i == menuIndex ? MINT : MUTED);
       oled.setCursor(8, y); oled.print(i == menuIndex ? "> " : "  "); oled.print(items[i]);
     }
@@ -1248,6 +1749,42 @@ void processBleCommands() {
   char cmd[sizeof(bleCommand)];
   if (!takeBleCommand(cmd, sizeof(cmd))) return;
 
+  // The USB drive shares a snapshot of the library; refuse data writes.
+  if (uiState == UI_USBDRIVE &&
+      (strncmp(cmd, "AMI:", 4) == 0 || strncmp(cmd, "KEY:", 4) == 0)) {
+    setStatus("ERR:usb-mode");
+    return;
+  }
+
+  // Wi-Fi credentials for over-the-air updates ("WIFI:<ssid>|<pass>").
+  if (strncmp(cmd, "WIFI:", 5) == 0) {
+    char *sep = strchr(cmd + 5, '|');
+    if (!sep) { setStatus("ERR:format"); return; }
+    *sep = 0;
+    const size_t sl = strlen(cmd + 5), pl = strlen(sep + 1);
+    if (sl == 0 || sl > 32 || pl > 64) { setStatus("ERR:format"); return; }
+    prefs.putString("wssid", cmd + 5);
+    prefs.putString("wpass", sep + 1);
+    setStatus("OK:wifi-saved");
+    return;
+  }
+  if (strcmp(cmd, "OTA:STATUS") == 0) {
+    setStatus(prefs.getString("wssid", "").length() ? "OK:ota-creds"
+                                                    : "ERR:ota-no-creds");
+    return;
+  }
+  if (strcmp(cmd, "OTA:START") == 0) {
+    if (!prefs.getString("wssid", "").length()) { setStatus("ERR:ota-no-creds"); return; }
+    if (uiState == UI_USBDRIVE) { setStatus("ERR:usb-mode"); return; }
+    otaRequested = true;
+    uiState = UI_OTA;
+    strlcpy(otaPhase, "Wi-Fi...", sizeof(otaPhase));
+    uiMessage = "";
+    setStatus("OK:ota-started");
+    drawScreen(true);
+    return;
+  }
+
   if (strncmp(cmd, "TEXT:", 5) == 0 || strncmp(cmd, "URL:", 4) == 0) {
     const size_t split = strcspn(cmd, ":");
     const char *value = cmd + split + 1;
@@ -1494,6 +2031,23 @@ void handleButtons() {
       uiMessage = "Reset cancelled";
       drawScreen(true);
     }
+  } else if (uiState == UI_INSPECT) {
+    // The loop polls for tags while this screen is up; each new tap
+    // re-identifies. BACK returns to the menu.
+    if (btnBack.pressed() || btnOk.pressed()) {
+      uiState = UI_MENU;
+      uiMessage = "";
+      drawScreen(true);
+    }
+  } else if (uiState == UI_USBDRIVE) {
+    if (btnBack.pressed() || btnOk.pressed()) {
+      exitUsbDrive();
+    }
+  } else if (uiState == UI_OTA) {
+    // runOtaUpdate() blocks in loop(); BACK/OK here feed otaCancelled
+    // through the progress callback (and the Wi-Fi wait loop polls the
+    // pins directly).
+    if (btnBack.pressed() || btnOk.pressed()) otaCancelled = true;
   } else if (uiState == UI_EMULATE) {
     // Amiibo mode: UP/DOWN hot-swaps to the neighbouring library entry on a
     // rotating emulator slot; the emulation keeps running. OK/BACK stop.
@@ -1523,8 +2077,8 @@ void handleButtons() {
       }
     }
   } else {  // UI_MENU
-    if (btnUp.pressed()) { menuIndex = (menuIndex + 6) % 7; uiMessage = ""; drawScreen(true); }
-    if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 7; uiMessage = ""; drawScreen(true); }
+    if (btnUp.pressed()) { menuIndex = (menuIndex + 8) % 9; uiMessage = ""; drawScreen(true); }
+    if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 9; uiMessage = ""; drawScreen(true); }
     // Long-press BACK at the menu toggles travel mode (BLE advertising off:
     // private + a bit quieter on the go). A short BACK just reports position.
     if (btnBack.held(1000)) {
@@ -1550,21 +2104,26 @@ void handleButtons() {
         if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); }
         else { uiState = UI_BACKUP; uiMessage = ""; }
       } else if (menuIndex == 2) {
+        if (!nfcReady) { uiMessage = "PN532Killer absent"; drawScreen(true); }
+        else { inspValid = false; inspUidLen = 0; uiState = UI_INSPECT; uiMessage = ""; }
+      } else if (menuIndex == 3) {
         if (travelMode) uiMessage = "Travel: BLE off";
         else uiMessage = bleConnected ? "Connected: use web sync" : "OpenTag BLE is advertising";
-      } else if (menuIndex == 3) {
-        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
-        else if (!nfcReady) uiMessage = "PN532Killer absent";
-        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
       } else if (menuIndex == 4) {
         if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
         else if (!nfcReady) uiMessage = "PN532Killer absent";
-        else { uiMessage = ""; if (!startNoteEmulation()) { uiMessage = "Emulation failed"; setStatus("ERR:emulate"); } }
+        else { waitingForTag = true; tagReady = false; uiState = UI_WAIT_TAG; uiMessage = ""; }
       } else if (menuIndex == 5) {
+        if (!pendingPresent) uiMessage = "Sync NDEF over BLE first";
+        else if (!nfcReady) uiMessage = "PN532Killer absent";
+        else { uiMessage = ""; if (!startNoteEmulation()) { uiMessage = "Emulation failed"; setStatus("ERR:emulate"); } }
+      } else if (menuIndex == 6) {
         memset(pendingValue, 0, sizeof(pendingValue));
         strlcpy(pendingKind, "TEXT", sizeof(pendingKind));
         prefs.remove("kind"); prefs.remove("value");
         pendingPresent = false; uiMessage = "Pending note cleared";
+      } else if (menuIndex == 7) {
+        enterUsbDrive();
       } else {
         uiState = UI_FACTORY;
         factoryAskedAt = millis();
@@ -1650,6 +2209,37 @@ void loop() {
   // OK at the menu (BACK can still cancel inside the window).
   if (uiState != UI_POWEROFF && millis() - lastActivityMs > kAutoSleepMs) {
     powerOffFromMenu();
+    return;
+  }
+
+  // Battery telemetry + low-battery protection (optional divider). While
+  // charging the terminal voltage rises, so the low checks are suspended.
+  if (millis() - battPollMs >= 2000) {
+    battPollMs = millis();
+    pollBattery();
+    if (battVolts > 0.5f && !charging && uiState != UI_POWEROFF) {
+      if (battVolts < 3.35f) {
+        if (battLowSinceMs == 0) {
+          battLowSinceMs = millis();
+          uiMessage = "Battery low";
+          chirp(1200, 200);
+          if (uiState == UI_MENU || uiState == UI_LIBRARY) drawScreen(true);
+        } else if (battVolts < 3.25f && millis() - battLowSinceMs > 30000) {
+          powerOffFromMenu();        // protect the cell: it is nearly empty
+          return;
+        }
+      } else {
+        battLowSinceMs = 0;
+      }
+    } else {
+      battLowSinceMs = 0;
+    }
+  }
+
+  // Over-the-air update requested from the web page (blocks until done).
+  if (otaRequested) {
+    otaRequested = false;
+    runOtaUpdate();
     return;
   }
 
@@ -1741,6 +2331,17 @@ void loop() {
     }
   }
 
+  // Poll for a tag while the inspector is up, then identify it.
+  if (uiState == UI_INSPECT && nfcReady && millis() - lastNfcPoll > 120) {
+    lastNfcPoll = millis();
+    uint8_t uid[7] = {0};
+    uint8_t uidLen = 0;
+    if (nfc.readPassiveTarget(uid, &uidLen, 60)) {
+      noteActivity();
+      inspectTag(uid, uidLen);
+    }
+  }
+
   // Poll for a tag while the backup screen is up, then dump + save it.
   if (uiState == UI_BACKUP && nfcReady && millis() - lastNfcPoll > 120) {
     lastNfcPoll = millis();
@@ -1765,6 +2366,7 @@ void loop() {
       disarmAmiiboWrite();
       switch (result) {
         case WRES_OK:
+          chirp(2400, 80);
           uiState = UI_LOCK_CONFIRM;
           lockAskedAt = millis();
           uiMessage = "";

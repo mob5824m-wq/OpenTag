@@ -34,6 +34,31 @@ guide, and parts list.
   against the back window and the firmware reads, validates, and stores the
   dump in the library (named by the tag's UID; full 1024-byte images for
   V3/NTAG I²C tags). No phone needed.
+- **Tag inspector** — the third menu item turns the OpenTag into a tag
+  identifier: tap any tag on the back window and the OLED shows its UID,
+  chip type (NTAG213/215/216, MIFARE UL…) and any NDEF text/URL payload.
+  Nothing is written; it's the safe "what is this tag?" answer.
+- **Battery gauge + low-battery protection (optional)** — a 100k/100k
+  divider on B+ feeds GPIO4; the header shows a charge percentage, turns
+  red at/below 15 %, warns once at 3.35 V and (with the divider fitted)
+  powers the device off cleanly if the cell sags below 3.25 V for 30 s.
+- **BLE pairing with a PIN** — the first phone to connect runs the standard
+  numeric-comparison pairing flow: the OLED shows a random 6-digit code,
+  the phone asks to confirm it, and the bond is stored (a failed exchange
+  is disconnected immediately). Re-pair by deleting the bond on the phone.
+- **USB drive mode (read-only)** — docked in the menu, the DevKit's USB-C
+  port enumerates as a USB mass-storage drive exposing a read-only snapshot
+  of the amiibo library (plus a README) — drag bins off the device with no
+  app at all. Loading new dumps still goes over BLE (the drive is a
+  snapshot; OK/BACK ejects it).
+- **Wi-Fi OTA updates (optional)** — provision Wi-Fi credentials over BLE
+  (`WIFI:<ssid>|<pass>`), then trigger an update from the web page's
+  Settings (or `OTA:START`): the device fetches the latest GitHub release,
+  flashes only the app partition and reboots — library and settings survive,
+  exactly like the wired one-command updater.
+- **Piezo feedback (optional)** — a passive buzzer on GPIO5 chirps on tag
+  backup, verified writes, pairing and the low-battery warning. Unwired,
+  the device stays silent, as before.
 - **One-command firmware updates** ([`tools/update_opentag.py`](tools/update_opentag.py))
   — plug the OpenTag into a computer and run the script: it downloads the
   latest firmware release from GitHub (CI builds and attaches it on every
@@ -273,8 +298,10 @@ just below the port) carries the charge LED's glow out through the west
 face, so charging is visible with the case closed even in bright rooms. The
 optional printed **desk stand**
 ([`hardware/cad/stl/opentag_desk_stand.stl`](hardware/cad/stl/opentag_desk_stand.stl))
-holds the OpenTag leaning back at ~10°, chin down — the charge port and
-lanyard lug end up on top, so it charges while docked. **Wireless:** with
+holds the OpenTag leaning back at ~10° with the screen up and readable —
+OLED end down at the front lip, the back resting on the stand's tall rear
+panel. The chin's charge port ends up just behind the panel's top edge, so
+the device still charges while docked with the cable dropped behind. **Wireless:** with
 the optional Qi receiver coil fitted (see `hardware/pcb/WIRING.md` — it sits
 under the battery on the engraved ring, east of the tap halo), any Qi pad
 charges the device through the same TP4056, and the bolt icon at the
@@ -285,8 +312,9 @@ storing the device.
 ## Device menu
 
 `Amiibo library` (first — emulation is the main use, so the menu opens on
-it) → `Backup tag` → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
-`Clear NDEF note` → `Factory reset`, driven by UP/DOWN/OK with BACK to
+it) → `Backup tag` → `Inspect tag` → `BLE sync` → `Write NDEF note` →
+`Emulate NDEF note` → `Clear NDEF note` → `USB drive` → `Factory reset`,
+driven by UP/DOWN/OK with BACK to
 cancel or exit. Holding UP or DOWN auto-repeats (first extra step after
 450 ms, then accelerating), so long libraries scroll quickly. Emulation
 starts on the PN532Killer's slot
@@ -313,6 +341,37 @@ hex name (V3/NTAG I²C Plus tags save their full 1024-byte image instead).
 An identical re-read says `Already saved` and just jumps to the entry; a
 tag rewritten with different data but the same UID saves as `-2`, `-3`, …
 BACK or OK leaves the reader screen.
+
+**Inspect tag:** the third menu item identifies whatever you tap on the back
+window — UID (hex), chip type from the capability container (NTAG213/215/216
+or MIFARE UL, with the tag's byte capacity) and the first bytes of any NDEF
+text/URL record, or `No NDEF data`. Tap again to re-scan another tag; it
+never writes. Use it to sort blank tags from written ones, or to read what
+an unknown sticker says before committing anything to it.
+
+**USB drive (read-only snapshot):** menu item 8. The DevKit's own USB-C port
+enumerates as a tiny USB mass-storage drive holding a *read-only snapshot*
+of the amiibo library plus a README — copy bins off the device from any OS
+with no app. It shares one USB port with the serial console, so the drive
+replaces the console while docked (flash over the other USB-C port, or just
+press OK/BACK to eject and get the console back). New dumps still go on
+over BLE; the snapshot is rebuilt every time you dock.
+
+**Battery telemetry:** with the optional 100k/100k divider fitted
+(`hardware/pcb/WIRING.md`), the header shows the cell's charge percentage
+between the wordmark and the BLE indicator — grey normally, red at/below
+15 %. Below 3.35 V the device warns once (`Battery low` + a chirp with the
+piezo fitted); below 3.25 V sustained for 30 s it runs the clean
+power-off flow to protect the cell (charging suspends the checks — the
+terminal voltage rises while the TP4056 is active).
+
+**Pairing & OTA:** the first BLE connection runs numeric-comparison pairing:
+a random 6-digit PIN appears on the OLED, the phone shows the same code,
+and the bond is stored. **Wi-Fi updates:** in the web page's Settings (or
+via BLE) send `WIFI:<ssid>|<pass>` once, then `OTA:START` (or the web page's
+Update button) — the device joins Wi-Fi, fetches the newest GitHub release,
+flashes only the app partition and reboots. Library, keys and settings
+survive, same as the wired updater; BACK cancels mid-download.
 
 **Travel mode:** hold BACK (1 s) at the menu to toggle. On, the device stops
 BLE advertising completely — it won't appear in phone scans — while

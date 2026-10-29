@@ -20,6 +20,11 @@ inline void delay(uint32_t ms) { g_fakeMillis += ms; }
 inline void pinMode(int, int) {}
 inline int digitalRead(int) { return HIGH; }
 inline long random(long max) { return max / 2; }
+inline int analogRead(int) { return 0; }
+inline void tone(int, unsigned int, unsigned long) {}
+inline void noTone(int) {}
+struct EspStub { void restart() {} };
+extern EspStub ESP;
 #define SERIAL_8N1 0x06
 template <typename A, typename B>
 inline A min(A a, B b) { return a < (A)b ? a : (A)b; }
@@ -63,6 +68,20 @@ class String {
   bool operator!=(const char *o) const { return s_ != o; }
   String &operator=(const char *o) { s_ = o ? o : ""; return *this; }
   String operator+(const String &o) const { return String(s_ + o.s_); }
+  int indexOf(const char *needle, int from = 0) const {
+    if (from < 0) from = 0;
+    if ((size_t)from > s_.size()) return -1;
+    const size_t pos = s_.find(needle ? needle : "", (size_t)from);
+    return pos == std::string::npos ? -1 : (int)pos;
+  }
+  int indexOf(char c, int from = 0) const {
+    return indexOf(std::string(1, c).c_str(), from);
+  }
+  bool endsWith(const String &o) const {
+    return o.length() <= s_.size() &&
+           s_.compare(s_.size() - o.length(), o.length(), o.s_) == 0;
+  }
+  bool endsWith(const char *o) const { return endsWith(String(o)); }
   std::string s_;
 };
 

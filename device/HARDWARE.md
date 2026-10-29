@@ -40,6 +40,8 @@ command set from an on-board emulator slot, so the ESP32 only has to push a
 | Buttons (active-low) | UP J3-6 / GPIO42, DOWN J3-5 / GPIO2, OK J3-4 / GPIO1, BACK J1-19 / GPIO13 |
 | Power in | 5 V via J1-21 (after Schottky from the boost), 3V3 out at J1-1/2 for OLED + Killer |
 | Charge sense (optional) | TP4056 /CHRG (active low) via 22 kΩ → J3-18 / GPIO21; lights the on-screen charge bolt |
+| Battery sense (optional) | 100k/100k divider: B+ ─ 100k ─┬─ 100k ─ GND, midpoint → J1-4 / GPIO4; header % gauge + low-battery auto-off |
+| Piezo (optional) | passive buzzer between J1-5 / GPIO5 and GND; chirps on backup / verified write / pairing / low battery |
 
 Avoid on the S3: GPIO 0/3/45/46 (strapping), 19/20 (USB D−/D+), 26–32 (flash),
 35–37 (octal PSRAM), 43/44 (UART0). The pin choices above dodge all of them.

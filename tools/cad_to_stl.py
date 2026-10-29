@@ -133,7 +133,13 @@ def parse_params(path):
         if not safe.match(expr):
             continue
         try:
-            val = eval(expr, {"__builtins__": {}}, dict(ns))  # our own file
+            # our own file; math funcs so the .cad can close its geometry
+            # with expressions (e.g. the desk-stand lean angle)
+            env = dict(ns, sin=math.sin, cos=math.cos, tan=math.tan,
+                       asin=math.asin, acos=math.acos, atan=math.atan,
+                       sqrt=math.sqrt, pi=math.pi)
+            # folded continuation lines would trip eval's parser
+            val = eval(re.sub(r"\s+", " ", expr), {"__builtins__": {}}, env)
         except Exception:
             continue
         if isinstance(val, (int, float)) and not isinstance(val, bool):
@@ -412,9 +418,9 @@ def back_plate(p):
     return difference([body] + cuts)
 
 def desk_stand(p):
-    """Desk stand: device rests chin-down (lug + USB-C up), leaning back
-    ~10 deg — back face on the panel's top edge, bottom-back edge on the
-    base, front face caught by the lip's top-rear corner."""
+    """Desk stand: device leans back stand_theta from vertical, screen up
+    (readable), OLED end down at the lip, back face on the panel's top edge
+    and bottom-rear corner on the base. See the .cad stand block."""
     base = T(rbox(p["stand_w"], p["stand_base_d"], p["stand_base_t"],
                   p["stand_base_r"]),
              [0, p["stand_front_y"] + p["stand_base_d"] / 2, 0])
@@ -726,16 +732,16 @@ def verify(p, front, back, cap, stand):
         ([3.5, 0, -4.5], "void"),    # below the flange, off the pusher
         ([0, 0, -4.5], "solid"),     # pusher rod
     ])
-    # desk stand: cradle channel empty, stops solid. The device at the
-    # ~10 deg lean spans y ~10.4 (front face on the lip corner) to ~37.6
-    # (bottom-back edge) at the base, so probe the channel at y 14..34.
+    # desk stand: cradle channel empty, stops solid. The docked device at
+    # the 9.83 deg lean spans y ~6.9 (screen face on the lip corner) to
+    # ~35.8 (bottom-rear corner on the base), so probe the channel between.
     probe(stand, [
         ([0, 55.2, 50], "solid"),    # back panel
-        ([0, 50, 50], "void"),       # cradle channel
-        ([0, 50, 20], "solid"),      # brace gusset
-        ([0, 42, 45], "void"),       # above the brace
-        ([0, 9.2, 10], "solid"),     # front lip
-        ([0, 12, 10], "void"),       # in front of the lip
+        ([0, 48, 50], "void"),       # cradle channel (clear of the brace)
+        ([0, 52, 20], "solid"),      # brace gusset (front face at y 50)
+        ([0, 42, 45], "void"),       # in front of the brace
+        ([0, 5.7, 4.5], "solid"),    # front lip (y 4.54..6.94, z 2.4..7.4)
+        ([0, 9.2, 4.5], "void"),     # just behind the lip
         ([0, 24, 10], "void"),       # cradle channel, low
         ([0, 0, 1.2], "solid"),      # base scoop
         ([0, 0, 5], "void"),         # above the scoop
@@ -749,8 +755,40 @@ def verify(p, front, back, cap, stand):
            "cradle floor open down to the base (2 hits)")
     expect(len(ray_hits(stand, [0, -10, 30], [0, 1, 0])) == 2,
            "brace + panel form one solid back stop (2 hits)")
-    expect(len(ray_hits(stand, [0, -10, 10], [0, 1, 0])) == 4,
+    expect(len(ray_hits(stand, [0, -10, 5], [0, 1, 0])) == 4,
            "lip (2) + fused back stop (2) at low height (4 hits)")
+
+    # docked-device interference gate: the shell envelope (plus the lanyard
+    # tab) leaned back stand_theta — screen up-forward, OLED end down at
+    # the lip, back face on the panel's top edge — must meet the stand at
+    # the three designed contacts and nowhere else.
+    th = p["stand_theta"]
+    dev = trimesh.util.concatenate([
+        T(trimesh.creation.box([p["outer_w"], p["outer_l"], p["outer_d"]]),
+          [0, 0, p["outer_d"] / 2]),
+        T(trimesh.creation.box([p["lug_w"], p["lug_l"], p["outer_d"]]),
+          [p["lug_cx"], p["lug_cy"], p["outer_d"] / 2]),
+    ])
+    dev.apply_transform(trimesh.transformations.rotation_matrix(
+        math.pi / 2 - th, [1, 0, 0]))
+    y_b0 = p["stand_panel_front"] - p["stand_panel_h"] * math.tan(th)
+    dev.apply_translation(
+        [0, y_b0 + p["outer_l"] / 2 * math.sin(th),
+         p["stand_base_t"] + p["outer_l"] / 2 * math.cos(th)])
+    inter = trimesh.boolean.intersection([stand, dev], engine="manifold")
+    ivol = abs(inter.volume) if inter is not None and len(inter.faces) else 0.0
+    expect(ivol < 0.5,
+           f"docked device interferes with the stand ({ivol:.3f} mm3)")
+    # the three contacts sit exactly where the .cad says they do
+    dq = trimesh.proximity.signed_distance(
+        dev, [[0, p["stand_lip_front"] + p["stand_lip_t"],
+               p["stand_base_t"] + p["stand_lip_h"]],      # lip corner
+              [0, p["stand_panel_front"],
+               p["stand_base_t"] + p["stand_panel_h"]],    # panel top edge
+              [0, y_b0, p["stand_base_t"]]])               # base corner
+    for label, sd in zip(("lip corner", "panel top edge", "base corner"), dq):
+        expect(abs(sd) < 0.05,
+               f"docked device misses the {label} (signed distance {sd:.3f})")
     ok &= not fails
     print("  all feature checks passed" if not fails else
           f"  {len(fails)} FEATURE CHECKS FAILED")

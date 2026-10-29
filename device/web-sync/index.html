@@ -67,6 +67,14 @@
     <div class="row" style="margin-top:10px"><span class="sub">Key state:</span>&nbsp;<span id="keyState" class="sub"><i>unknown — connect and check</i></span></div>
     <p class="sub warning">Only use key files you legally extracted yourself. Uploading them is your responsibility.</p>
   </section>
+
+  <section class="card">
+    <strong>Firmware updates over Wi-Fi</strong>
+    <p class="sub">Save your Wi-Fi credentials once, then update the OpenTag without a computer: it fetches the newest firmware release from GitHub, flashes only the app partition and reboots — your amiibo library, keys and note survive every update. Credentials live in the device's settings and are only used for updates. The wired one-command updater (<code>tools/update_opentag.py</code>) keeps working without any of this.</p>
+    <div class="row"><div class="field"><label for="wifiSsid">Wi-Fi name (SSID)</label><input id="wifiSsid" type="text" autocomplete="off" spellcheck="false" maxlength="32" placeholder="MyNetwork"></div><div class="field"><label for="wifiPass">Password</label><input id="wifiPass" type="password" autocomplete="off" maxlength="64" placeholder="••••••••"></div></div>
+    <div class="row" style="margin-top:10px"><button id="wifiSave" disabled>Save Wi-Fi</button><button id="otaCheck" class="secondary" disabled>Check status</button><button id="otaStart" class="secondary" disabled>Update now</button></div>
+    <p class="sub warning">Updating needs battery or a charger connected — a power loss during flashing falls back to the previous app on the next boot, but finishing an update is nicer.</p>
+  </section>
   <p class="foot">OpenTag is an independent open-source project. NFC writes replace the existing NDEF area of the selected NTAG215. Confirm on the device before writing; only use tags you own or are authorized to program.</p>
 </main>
 <script src="amiibo-db.js"></script>
@@ -390,7 +398,7 @@
   function setState(text, mode = '') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
   function setConnectedButtons(on) {
     $('disconnect').disabled = !on;
-    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu', 'uploadKeys', 'keyStatusBtn', 'forgetKeys']) $(id).disabled = !on;
+    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu', 'uploadKeys', 'keyStatusBtn', 'forgetKeys', 'wifiSave', 'otaCheck', 'otaStart']) $(id).disabled = !on;
   }
 
   function expect(prefix, timeoutMs) {
@@ -540,6 +548,31 @@
   $('forgetKeys').onclick = async () => {
     try { await sendCmd('KEY:CLEAR'); await expect('OK:keys-cleared', 3000); } catch (e) { log(e.message, 'err'); }
     $('keyState').textContent = 'no keys on device';
+  };
+
+  // Wi-Fi provisioning + over-the-air updates (see the firmware's runOtaUpdate)
+  $('wifiSave').onclick = async () => {
+    const ssid = $('wifiSsid').value.trim(), pass = $('wifiPass').value;
+    if (!ssid) { log('Enter a Wi-Fi name first.', 'err'); return; }
+    try {
+      await sendCmd(`WIFI:${ssid}|${pass}`);
+      await expect('OK:wifi-saved', 4000);
+      log('Wi-Fi credentials saved on the device.');
+    } catch (e) { log('Wi-Fi save failed: ' + e.message, 'err'); }
+  };
+  $('otaCheck').onclick = async () => {
+    try {
+      await sendCmd('OTA:STATUS');
+      await expect('OK:ota-creds', 4000);
+      log('Credentials stored — the device is ready to update.');
+    } catch (e) { log('No Wi-Fi credentials saved yet (save them first).', 'err'); }
+  };
+  $('otaStart').onclick = async () => {
+    try {
+      await sendCmd('OTA:START');
+      await expect('OK:ota-started', 4000);
+      log('Update started — progress is on the OLED. Keep the device powered; BACK cancels.');
+    } catch (e) { log('OTA start failed: ' + e.message, 'err'); }
   };
 
   // Chunked transfer to the DATA characteristic. Adapts the chunk size if the

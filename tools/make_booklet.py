@@ -278,13 +278,20 @@ def page_power(pdf):
         "and a tiny acrylic light pipe just below the port carries the glow "
         "to the outside face: glowing = charging, dark = full or unplugged.",
         "The optional printed desk stand leans the OpenTag back about ten "
-        "degrees, charge port on top - it charges while docked.",
+        "degrees with the screen up and readable; the charge port ends up "
+        "just behind the stand's tall back panel, so it still charges while "
+        "docked with the cable dropped behind.",
         "Optional wireless charging: a Qi receiver coil inside the back "
         "charges from any Qi pad - line the engraved ring on the back up "
         "with the pad, and a small bolt icon appears at the top-right of "
         "the screen while charging.",
         "Charge fully before first use. A full battery lasts many hours of "
         "emulation; the screen sleeps when the device is off.",
+        "Battery gauge: if your OpenTag has the optional voltage divider "
+        "fitted, the header shows the cell percentage - grey normally, red "
+        "at or below 15 percent. Below 3.35 V it warns once (Battery low); "
+        "below 3.25 V for half a minute it powers off by itself to protect "
+        "the cell. Charging suspends those checks.",
     ])
     pdf.h2("Turning it off")
     pdf.bullets([
@@ -323,10 +330,12 @@ def page_buttons(pdf):
         ["Item", "What it's for"],
         [["Amiibo library", "Browse your amiibo, emulate one (opens first)"],
          ["Backup tag", "Save a physical tag's dump to the library"],
+         ["Inspect tag", "Identify any tag: type, unique ID, its text"],
          ["BLE sync", "Connect the web page or Android app"],
          ["Write NDEF note", "Write your note to a physical NTAG215"],
          ["Emulate NDEF note", "Present the note as a virtual tag"],
          ["Clear NDEF note", "Erase the stored note"],
+         ["USB drive", "Share the library read-only over a USB cable"],
          ["Factory reset", "Wipe library, keys and settings (hold OK to "
                            "confirm)"]],
         [34, 86])
@@ -343,6 +352,19 @@ def page_more(pdf):
         "New-generation V3 figures save as full images.",
         "Reading a tag you already saved says Already saved and jumps to "
         "it; a rewritten tag with the same unique ID saves as a -2 copy.",
+        "With the optional piezo buzzer fitted, the device chirps softly "
+        "when a backup is saved and when a write verifies - silence means "
+        "no piezo, not a failure.",
+    ])
+    pdf.h2("Inspect tag")
+    pdf.bullets([
+        "Pick Inspect tag and tap any tag against the halo on the back: "
+        "the screen shows the tag's unique ID, its chip type and size "
+        "(NTAG213/215/216 or MIFARE UL), and the first words of any text "
+        "or address stored on it - or No NDEF data for a blank.",
+        "Tap another tag to re-scan; it never writes anything.",
+        "Use it to tell blank tags from written ones, or to check what an "
+        "unknown sticker says before you commit anything to it.",
     ])
     pdf.h2("Travel mode")
     pdf.bullets([
@@ -446,14 +468,35 @@ def page_sync(pdf):
              "from the Bluetooth prompt, and you can upload amiibo dumps, "
              "manage the note, and browse the on-device library with "
              "artwork - remotely emulate or delete entries.")
+    pdf.h2("Pairing")
+    pdf.body("The first phone to connect runs a short numeric pairing: a "
+             "random six-digit code appears on the OpenTag screen, your "
+             "phone shows the same code, and confirming it bonds the two. "
+             "A mismatched code is dropped immediately. To re-pair, delete "
+             "the bond in your phone's Bluetooth settings first.")
     pdf.h2("Android app")
     pdf.body("The companion app does the same over BLE: pick .bin dumps or "
              "a .zip of them, upload, browse, and trigger emulation.")
+    pdf.h2("USB drive (read-only)")
+    pdf.bullets([
+        "Pick USB drive and plug the DevKit's own USB-C port into any "
+        "computer: the OpenTag appears as a small drive holding a "
+        "read-only copy of your amiibo library plus a README.",
+        "Drag bins off the device with no app at all. Loading new dumps "
+        "still goes over BLE - the drive is a snapshot, rebuilt each time "
+        "you dock.",
+        "OK or BACK ejects the drive (the USB port goes back to the "
+        "serial console).",
+    ])
     pdf.h2("Firmware updates")
     pdf.body("Plug the device into a computer over USB and run "
              "python tools/update_opentag.py - it downloads the latest "
              "release and flashes only the app partition. Your amiibo "
              "library, keys, settings and note survive every update.")
+    pdf.body("Over the air: send your Wi-Fi name and password once from "
+             "the sync page's Settings, then press Update - the OpenTag "
+             "fetches the latest release over Wi-Fi, flashes itself and "
+             "reboots, everything intact. BACK cancels mid-download.")
 
 
 def page_help(pdf):
@@ -483,11 +526,47 @@ def page_help(pdf):
          ["Qi pad not charging",
           "Centre the pad on the engraved ring on the back; the bolt icon "
           "on screen must appear - if not, reseat the pad or use another "
-          "one"]],
+          "one"],
+         ["No battery percent shown",
+          "The gauge needs the optional voltage divider fitted inside - "
+          "without it the header just shows the BLE state"],
+         ["Phone asks for a PIN",
+          "That's pairing: compare the six digits on the OpenTag screen "
+          "with your phone and confirm. Mismatch? Cancel and retry"],
+         ["USB drive doesn't appear",
+          "Use the DevKit's own USB-C port (not the charge port), pick "
+          "USB drive on the menu, and try another cable - some are "
+          "charge-only"],
+         ["'OTA failed' on screen",
+          "The Wi-Fi credentials or the network were the problem - retry "
+          "near the router, or use the wired updater instead"]],
         [36, 84])
     pdf.tip("Charging but the LEDs look dark? Look at the port slot from "
             "an angle in dim light - the LEDs sit just inside, next to "
             "the connector.")
+
+
+def page_inside(pdf):
+    pdf.sheet("Inside your OpenTag")
+    pdf.body("Every module of the handheld and how they connect, on the "
+             "open-source carrier board. The full wire-by-wire guide with "
+             "pin tables lives in hardware/pcb/WIRING.md in the project "
+             "repository - this is the map for identifying parts when you "
+             "open the case.")
+    pdf.ln(1)
+    img = ROOT / "hardware" / "pcb" / "wiring_diagram.png"
+    w = pdf.W - pdf.l_margin - pdf.r_margin
+    pdf.image(str(img), x=pdf.l_margin, w=w)
+    pdf.ln(2)
+    pdf.set_font("dv", "", 8)
+    pdf.set_text_color(120, 125, 130)
+    pdf.multi_cell(0, 4,
+                   "Left to right: the OLED display on its 7-pin header, "
+                   "the ESP32-S3 controller at the heart, the PN532Killer "
+                   "NFC frontend on UART, and the power chain - battery, "
+                   "USB-C charger, boost module and the optional Qi "
+                   "receiver coil. Buttons and the optional piezo buzzer "
+                   "wire to the controller's general-purpose pins.")
 
 
 def page_care(pdf):
@@ -529,6 +608,7 @@ def main():
     page_ndef(pdf)
     page_sync(pdf)
     page_help(pdf)
+    page_inside(pdf)
     page_care(pdf)
     OUT.parent.mkdir(exist_ok=True)
     pdf.output(OUT)

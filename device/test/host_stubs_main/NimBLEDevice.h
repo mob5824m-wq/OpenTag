@@ -7,7 +7,11 @@
 namespace NIMBLE_PROPERTY {
 enum Prop : int { WRITE = 1, READ = 2, NOTIFY = 4, WRITE_NR = 8 };
 }
-class NimBLEConnInfo {};
+class NimBLEConnInfo {
+ public:
+  bool isBonded() const { return false; }
+  uint16_t getConnHandle() const { return 0; }
+};
 class NimBLECharacteristic {
  public:
   void setValue(const std::string &) {}
@@ -27,6 +31,7 @@ class NimBLEServerCallbacks {
   virtual ~NimBLEServerCallbacks() {}
   virtual void onConnect(NimBLEServer *, NimBLEConnInfo &) {}
   virtual void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int) {}
+  virtual void onAuthenticationComplete(NimBLEConnInfo &) {}
 };
 class NimBLECharacteristicCallbacks {
  public:
@@ -37,6 +42,7 @@ class NimBLEServer {
  public:
   void setCallbacks(NimBLEServerCallbacks *) {}
   NimBLEService *createService(const char *) { return new NimBLEService(); }
+  void disconnect(uint16_t) {}
 };
 class NimBLEAdvertising {
  public:
@@ -51,4 +57,9 @@ class NimBLEDevice {
   static NimBLEAdvertising *getAdvertising() { return new NimBLEAdvertising(); }
   static void startAdvertising() {}
   static void stopAdvertising() {}
+  static NimBLEServer *getServer() { return new NimBLEServer(); }
+  static bool startSecurity(uint16_t, int * = nullptr) { return true; }
+  static void setSecurityAuth(bool, bool, bool) {}
+  static void setSecurityIOCap(uint8_t) {}
+  static void setSecurityPasskey(uint32_t) {}
 };

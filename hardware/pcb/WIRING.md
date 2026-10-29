@@ -1,5 +1,11 @@
 # OpenTag carrier PCB — wiring & assembly guide
 
+![Pictorial wiring diagram — every module and wire of the handheld](wiring_diagram.png)
+
+*Pictorial overview: the modules and their color-coded hookups as assembled
+on the carrier PCB (full signal truth in the tables below — the drawing is
+illustrative).*
+
 `opentag-carrier.kicad_pcb` (regenerate with `python3 generate_carrier_pcb.py`,
 which self-checks connectivity and clearance before writing the file) is a
 90 × 60 mm, 2-layer, all-through-hole board. Two ways to fabricate it:
@@ -80,6 +86,14 @@ TP4056 /CHRG (pin 7 = CHRG LED cathode) ── R2 22k ── J3-18 (GPIO21)
   engraved-ring side (the ring + bolt on the outside mark the pad spot),
   battery on top of the coil. Keep it east of the tap halo — metal near the
   Killer's antenna costs read range.
+- Why the ring sits at the battery bay (the lower-right of the back when
+  the device is held normally) and not the upper-left: the upper-left of
+  the back plate is fully occupied — carrier-PCB standoffs and button
+  posts, the 56 × 30 mm service window over the DevKitC, and the DevKitC
+  itself (USB end west) sit there, leaving no ⌀ 40 mm clear circle. The
+  battery bay is the only zone that fits the coil *and* keeps its copper
+  away from the NFC antenna; the battery then lies on top of the coil as
+  the coupling spacer.
 - D2 (a second 1N5819) stops the jack's 5 V from back-driving the receiver
   when you charge over USB-C. With the pad alone the TP4056 sees ~4.6 V,
   which is plenty for the ~0.5 A the small coil delivers.
@@ -104,6 +118,8 @@ TP4056 /CHRG (pin 7 = CHRG LED cathode) ── R2 22k ── J3-18 (GPIO21)
 | OLED_DC | J1-15 (GPIO9) | OLED DC | 15 / 9 |
 | OLED_CS | J1-16 (GPIO10) | OLED CS | 16 / 10 |
 | CHG_SENSE | TP4056 /CHRG (pin 7), via R2 22k | J3-18 (GPIO21) | 18 / 21 |
+| BATT_SENSE | B+ ─ 100k ─┬ (midpoint) ─ 100k ─ GND | J1-4 (GPIO4) | 4 / 4 |
+| PIEZO | passive buzzer + pin | J1-5 (GPIO5), other pin to GND | 5 / 5 |
 | +3V3 | J1-1/2 | OLED VCC, Killer 3V3 | — |
 | +5V | J1-21 (via D1) | DevKit 5V pin | — |
 
@@ -116,6 +132,24 @@ TP4056 /CHRG (pin 7 = CHRG LED cathode) ── R2 22k ── J3-18 (GPIO21)
   skips the lock confirm and exits the amiibo library back to the menu.
 - The PN532Killer runs on 3.3 V only. Its J4 header: pin 9 = RX, pin 8 = TX
   (3.3 V TTL), plus GND and VCC — **verify against your board's silkscreen.**
+
+## Optional wiring: battery gauge + piezo
+
+```
+B+ ── 100k ──┬── 100k ── GND      (divider draws ~18 µA; fit only if you
+             └── J1-4 (GPIO4)      want the % gauge / auto-off)
+GPIO5 (J1-5) ── piezo(+) ── piezo(−) ── GND
+```
+
+- With the divider fitted, the OLED header shows the cell percentage
+  (grey; red at/below 15 %). Below 3.35 V the device warns once; below
+  3.25 V sustained 30 s it powers off cleanly. Without the divider the
+  firmware detects the floating pin (raw < ~0.1 V) and hides the gauge.
+- The piezo is a **passive** buzzer (no oscillator): the firmware drives it
+  with `tone()` chirps on tag backup, verified writes, pairing completion
+  and the low-battery warning. Unwired = silent, no errors.
+- Note the /CHRG sense line (R2, 22 kΩ) stays as documented above — the
+  two features are independent of each other and of the Qi option.
 
 ## Bring-up checklist
 
