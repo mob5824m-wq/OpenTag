@@ -132,6 +132,48 @@ def parse_params(path):
             ns[name] = float(val)
     return ns
 
+def parse_brand(path):
+    """Brand text + A-Z pixel font straight from the .cad (single source of
+    truth): brand_text = "OPENTAG"; and the brand_font = [["A",[..]],..]
+    table (classic 5x7 columns, bit 0 = top row)."""
+    import ast
+    src = path.read_text()
+    m = re.search(r'brand_text\s*=\s*"([^"]*)"', src)
+    text = m.group(1) if m else ""
+    m = re.search(r"brand_font\s*=\s*(\[.*?\]);", src, re.S)
+    table = ast.literal_eval(m.group(1)) if m else []
+    font = {entry[0]: entry[1] for entry in table}
+    return text, font
+
+
+def brand_boxes(p):
+    """Engraved wordmark pixel boxes, mirroring the .cad's brand_mark():
+    laid out in upright text space then rotated 180 deg about the wordmark
+    centre (so it reads with the OLED at the top). Each box spans
+    z = outer_d - brand_depth .. outer_d + 0.01 (flush floor, overshoot
+    outside the face)."""
+    text, font = p["_brand_text"], p["_brand_font"]
+    px, dep = p["brand_px"], p["brand_depth"]
+    n = len(text)
+    W = (n * 6 - 1) * px
+    eps = 0.02   # diagonal-pixel overlap (matches the .cad): keeps the
+                 # engraved surface manifold where glyph pixels touch
+                 # corner-to-corner
+    boxes = []
+    for i, ch in enumerate(text):
+        cols = font.get(ch)
+        if ch == " " or cols is None:
+            continue
+        for c in range(5):
+            for r in range(8):
+                if (cols[c] >> r) & 1:
+                    ux, uy = (i * 6 + c) * px, (6 - r) * px
+                    fx = p["brand_cx"] + W / 2 - ux - px - eps
+                    fy = p["brand_cy"] + 4 * px - uy - px - eps
+                    boxes.append(T(cube(px + eps, px + eps, dep + 0.01),
+                                   [fx, fy, p["outer_d"] - dep]))
+    return boxes
+
 # ---------------------------------------------------------------------------
 # Geometry mirror of opentag_shell.cad
 # ---------------------------------------------------------------------------
@@ -174,7 +216,8 @@ def front_shell(p):
                                     p["usb_slot_z0"], p["usb_slot_z1"], west=True)
     sw_thru, sw_plug = wall_slot(p["sw_slot_y"], p["sw_slot_l"],
                                   p["sw_slot_z0"], p["sw_slot_z1"], west=False)
-    shell = union([difference([outer, inner, oled] + btns + [usb_thru, sw_thru]),
+    shell = union([difference([outer, inner, oled] + btns
+                              + [usb_thru, sw_thru] + brand_boxes(p)),
                    usb_plug, sw_plug])
     # OLED side rails (fused +0.02 into the face, see .cad)
     rails = [T(cube(1.6, 34.5, p["inner_d"] - p["oled_top"] + 0.02),
@@ -267,6 +310,13 @@ def back_plate(p):
     cuts.append(T(cube(p["vent_l"], p["vent_w"], p["floor_t"] + 0.02),
                   [p["tray_cx"] - p["vent_l"] / 2,
                    p["tray_cy"] - p["vent_w"] / 2, -p["floor_t"] - 0.01]))
+    # engraved halo ring around the cradle (tap-zone locator): annular tool,
+    # shallow groove terminating mid-material from the outer face
+    halo = difference([T(cyl(p["halo_d"], p["halo_t"] + 0.01),
+                         [p["kil_cx"], p["kil_cy"], -p["floor_t"] - 0.01]),
+                       T(cyl(p["halo_d"] - 2 * p["halo_w"], p["halo_t"] + 0.03),
+                         [p["kil_cx"], p["kil_cy"], -p["floor_t"] - 0.02])])
+    cuts.append(halo)
     for x in (-1, 1):
         for y in (-1, 1):
             at = [x * p["screw_dx"], y * p["screw_dy"]]
@@ -353,10 +403,10 @@ def verify(p, front, back, cap):
     ok = True
     print("geometry checks:")
     ok &= check(front, "front shell",
-                [p["outer_w"], p["outer_l"], p["outer_d"]], 44618, 0.02)
+                [p["outer_w"], p["outer_l"], p["outer_d"]], 44421, 0.02)
     ok &= check(back, "back plate",
                 [p["outer_w"], p["outer_l"], p["standoff_h"] + p["floor_t"]],
-                27458, 0.02)
+                27430, 0.02)
     # cap volume: head + solid skirt + flange + pusher rod, minus the rod's
     # overlap with skirt and flange (pi*r^2 * (flange_t + 0.4))
     cap_vol = (math.pi * (p["cap_d"] / 2) ** 2 * p["cap_h"]
@@ -439,6 +489,18 @@ def verify(p, front, back, cap):
             expect((got > 0) if want == "solid" else (got < 0),
                    f"point {pt} should be {want}, signed distance {got:.2f}")
 
+    # engraved wordmark: centre of the first lit pixel of the first glyph
+    # (brand boxes are rotated 180 deg, hence the mirrored formula)
+    bpx = p["brand_px"]
+    bw = (len(p["_brand_text"]) * 6 - 1) * bpx
+    bi, bc, br = next((i, c, r) for i, ch in enumerate(p["_brand_text"])
+                      if ch in p["_brand_font"]
+                      for c in range(5) for r in range(8)
+                      if (p["_brand_font"][ch][c] >> r) & 1)
+    bx = p["brand_cx"] + bw / 2 - (bi * 6 + bc) * bpx - bpx / 2
+    by = p["brand_cy"] + 4 * bpx - (6 - br) * bpx - bpx / 2
+    halo_r = p["halo_d"] / 2 - p["halo_w"] / 2   # groove centreline radius
+
     probe(front, [
         ([-48, p["usb_slot_y"], 3], "void"),          # USB slot channel
         ([-48, -10, 3], "solid"),                     # west wall
@@ -451,6 +513,9 @@ def verify(p, front, back, cap):
         ([p["oled_cx"] + 15, p["oled_cy"], 26.8], "void"),    # beside rail
         ([p["screw_dx"] + 2, p["screw_dy"], 5], "solid"),     # boss
         ([p["screw_dx"], p["screw_dy"], 5], "void"),          # boss hole
+        ([bx, by, p["outer_d"] - p["brand_depth"] / 2], "void"),   # wordmark pixel
+        ([bx, by, p["outer_d"] - p["brand_depth"] - 0.4], "solid"), # under engraving
+        ([bx, by - 10, p["outer_d"] - 0.3], "solid"),         # face below wordmark
     ])
     probe(back, [
         ([p["kil_cx"], p["kil_cy"], -0.5], "void"),   # tap window open
@@ -481,6 +546,12 @@ def verify(p, front, back, cap):
         ([p["tray_cx"], p["tray_cy"], 2.5], "void"),       # tray interior open
         ([p["tray_cx"], p["tray_cy"] - 4.2, 1.0], "solid"),  # tie-down bar
         ([0, 0, -1], "solid"),                             # plate floor
+        ([p["kil_cx"] + halo_r, p["kil_cy"], -p["floor_t"] + p["halo_t"] / 2],
+         "void"),                                          # halo groove
+        ([p["kil_cx"] + halo_r + 1.25, p["kil_cy"],
+          -p["floor_t"] + p["halo_t"] / 2], "solid"),      # plate beyond the halo
+        ([p["kil_cx"] + halo_r, p["kil_cy"], -p["floor_t"] + p["halo_t"] + 0.1],
+         "solid"),                                         # material over the groove
     ])
     probe(cap, [
         ([0, 0, 1.1], "solid"),      # head
@@ -500,6 +571,7 @@ def verify(p, front, back, cap):
 
 def main():
     p = parse_params(CAD)
+    p["_brand_text"], p["_brand_font"] = parse_brand(CAD)
     need = ("outer_w", "outer_l", "outer_d", "inner_w", "inner_l", "inner_d",
             "wall", "floor_t", "corner", "oled_cx", "oled_cy", "oled_win_w",
             "oled_win_l", "oled_win_r", "oled_bezel", "oled_top", "btn_dx",
@@ -512,11 +584,15 @@ def main():
             "bat_w", "tray_cx", "tray_cy", "tray_w", "tray_d", "vent_l",
             "vent_w", "svc_w", "svc_l", "svc_cy", "svc_r", "cap_d", "cap_h",
             "cap_proud", "cap_skirt_o", "cap_skirt",
-            "cap_flange_d", "cap_flange_t", "cap_push", "cap_push_d")
+            "cap_flange_d", "cap_flange_t", "cap_push", "cap_push_d",
+            "brand_px", "brand_depth", "brand_cx", "brand_cy",
+            "halo_d", "halo_w", "halo_t")
     missing = [k for k in need if k not in p]
     if missing:
         sys.exit(f"parameters not parsed from {CAD}: {missing}")
-    print(f"parsed {len(p)} parameters from {CAD.name}")
+    print(f"parsed {len(p)} parameters + brand "
+          f"\"{p['_brand_text']}\" ({len(p['_brand_font'])} glyphs) "
+          f"from {CAD.name}")
 
     parts = {
         "opentag_front_shell.stl": front_shell(p),

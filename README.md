@@ -260,7 +260,13 @@ it) → `BLE sync` → `Write NDEF note` → `Emulate NDEF note` →
 runs on the PN532Killer's slot
 0 and stops on any button press or a BLE `STOP`. In the library, short OK
 emulates; long OK (1 s) is the advanced path that arms a write to a physical
-tag. Preview the whole interface (buttons, long-press, every screen) in your
+tag. Long-pressing OK **at the menu** is soft power: a "Powering off" screen
+appears (BACK cancels within ~0.7 s), then the OLED parks and the ESP32-S3
+drops into deep sleep; holding OK for a full second wakes it back to the
+menu. That's a convenience off, not a battery disconnect — the DevKitC's
+regulator and the boost still draw a few mA asleep, so use the slide switch
+for storage. Preview the whole interface (buttons, long-press, every screen,
+power off/on) in your
 browser with [`device/web-preview/index.html`](device/web-preview/index.html).
 
 ## Scope notes

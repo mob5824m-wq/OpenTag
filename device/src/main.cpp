@@ -5,6 +5,8 @@
 #include <NimBLEDevice.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1351.h>
+#include <esp_sleep.h>
+#include <driver/rtc_io.h>
 #include <cstring>
 #include <string>
 
@@ -140,7 +142,7 @@ static size_t amiSelected = 0;
 static size_t amiTop = 0;
 
 enum UiState : uint8_t { UI_MENU, UI_WAIT_TAG, UI_TAG_READY, UI_LIBRARY, UI_EMULATE,
-                         UI_WRITE_TAG, UI_LOCK_CONFIRM };
+                         UI_WRITE_TAG, UI_LOCK_CONFIRM, UI_POWEROFF };
 static uint8_t uiState = UI_MENU;
 
 static unsigned long lastDraw = 0;
@@ -443,6 +445,9 @@ void drawScreen(bool force = false) {
     oled.setTextColor(LAVENDER); oled.setCursor(8, 100);
     oled.print("Killer slot 0 active");
     oled.setTextColor(MINT); oled.setCursor(8, 116); oled.print("BACK: stop");
+  } else if (uiState == UI_POWEROFF) {
+    oled.setTextColor(WHITE); oled.setCursor(8, 52); oled.print("Powering off");
+    oled.setTextColor(MINT); oled.setCursor(8, 76); oled.print("BACK: cancel");
   } else {
     const char *items[] = {"Amiibo library", "BLE sync", "Write NDEF note",
                            "Emulate NDEF note", "Clear NDEF note"};
@@ -453,11 +458,45 @@ void drawScreen(bool force = false) {
     }
     oled.setTextColor(WHITE); oled.setCursor(8, 116);
     if (pendingPresent) { oled.print(pendingKind); oled.print(": "); oled.print(String(pendingValue).substring(0, 12)); }
-    else oled.print("Sync a text or URL");
+    else oled.print("Hold OK: power off");
     if (uiMessage.length()) {
       oled.setTextColor(LAVENDER); oled.setCursor(8, 108); oled.print(uiMessage.substring(0, 19));
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Soft power: long-press OK
+// ---------------------------------------------------------------------------
+
+// "Off" is deep sleep: the OLED panel is parked and the SoC draws microamps.
+// The DevKitC's LDO/USB chip and the MT3608 boost still leak a few mA, so
+// the slide switch remains the true battery disconnect for storage — this
+// is a convenience off. OK (GPIO1, an RTC pin) is the wake button; the PCB
+// has no external pullups, so the RTC pullup must hold the line high while
+// the chip sleeps (the normal weak pullup is off in deep sleep).
+void enterDeepSleep() {
+  rtc_gpio_pullup_en(GPIO_NUM_1);
+  rtc_gpio_pulldown_dis(GPIO_NUM_1);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_1, 0);   // wake on OK, active low
+  esp_deep_sleep_start();                        // no return
+}
+
+void powerOffFromMenu() {
+  uiState = UI_POWEROFF;
+  drawScreen(true);
+  const uint32_t t0 = millis();                  // short BACK-cancel window
+  while (millis() - t0 < 700) {
+    if (btnBack.pressed()) {
+      uiState = UI_MENU;
+      uiMessage = "Power off cancelled";
+      drawScreen(true);
+      return;
+    }
+    delay(10);
+  }
+  oled.enableDisplay(false);   // park panel + charge pump (3V3 stays live)
+  enterDeepSleep();
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,7 +1078,11 @@ void handleButtons() {
     if (btnUp.pressed()) { menuIndex = (menuIndex + 4) % 5; uiMessage = ""; drawScreen(true); }
     if (btnDown.pressed()) { menuIndex = (menuIndex + 1) % 5; uiMessage = ""; drawScreen(true); }
     if (btnBack.pressed()) { uiMessage = "You're at the menu"; drawScreen(true); }
-    if (btnOk.pressed()) {
+    // Long-press OK: soft power off. The menu action itself moved to
+    // short-press so a hold never triggers it (fires on release, exactly
+    // like the web preview).
+    if (btnOk.held(1000)) { powerOffFromMenu(); return; }
+    if (btnOk.shortPress(1000)) {
       if (menuIndex == 0) {
         listAmiibos();
         amiSelected = 0; amiTop = 0;
@@ -1094,6 +1137,16 @@ void setup() {
   pinMode(Pins::BUTTON_DOWN, INPUT_PULLUP);
   pinMode(Pins::BUTTON_OK, INPUT_PULLUP);
   pinMode(Pins::BUTTON_BACK, INPUT_PULLUP);
+
+  // Soft power-on: if OK just woke us from deep sleep, it must be held for
+  // a full second to boot — a short tap goes straight back to sleep. This
+  // runs before SPI/OLED come up so the screen stays dark during the hold.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+    const uint32_t t0 = millis();
+    while (digitalRead(Pins::BUTTON_OK) == LOW && millis() - t0 < 1000) delay(10);
+    if (digitalRead(Pins::BUTTON_OK) == HIGH) enterDeepSleep();   // released early
+    while (digitalRead(Pins::BUTTON_OK) == LOW) delay(10);        // wait for release
+  }
 
   // No MISO: the OLED is write-only and GPIO13 (the MISO pin) is the BACK
   // button, so it must not be claimed by the SPI driver.

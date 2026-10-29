@@ -27,12 +27,15 @@
   .panel input[type=text] { background:#0d1219; border:1px solid var(--line); color:var(--text); border-radius:8px; padding:7px 9px; font:12px ui-monospace,monospace; width:150px; }
   #statusline { margin-top:10px; color:var(--muted); font-size:11px; min-height:34px; }
   .note { color:#8fa89a; font-size:11px; margin-top:12px; }
+  .hidden { display:none; }
+  .offnote { color:#e8c47b; background:#241c0f; border:1px solid #55431f; padding:8px 10px;
+             border-radius:6px; font-size:12px; margin-top:10px; max-width:512px; }
   kbd { background:#1d2733; border:1px solid #31404f; border-radius:5px; padding:1px 6px; font-size:11px; }
 </style>
 </head>
 <body>
 <h1>OPENTAG — DEVICE UI PREVIEW</h1>
-<p class="sub">Simulation of the firmware's OLED interface (SSD1351, 128×128) for design testing. This page talks to no hardware — every screen, color and pixel position is a faithful port of <code>drawScreen()</code> in <code>device/src/main.cpp</code>. UP/DOWN move, OK selects (hold ~1&nbsp;s for a long press), BACK cancels or exits whatever screen you're on.</p>
+<p class="sub">Simulation of the firmware's OLED interface (SSD1351, 128×128) for design testing. This page talks to no hardware — every screen, color and pixel position is a faithful port of <code>drawScreen()</code> in <code>device/src/main.cpp</code>. UP/DOWN move, OK selects (hold ~1&nbsp;s for a long press), BACK cancels or exits whatever screen you're on. Hold OK at the menu to power off (BACK cancels within the window); hold OK while off to power back on.</p>
 
 <div class="stage">
   <div>
@@ -43,6 +46,7 @@
       <div><button class="hwbtn ok" id="bOk">OK</button><div class="lbl">GPIO1</div></div>
       <div><button class="hwbtn" id="bBack">BACK</button><div class="lbl">GPIO13</div></div>
     </div>
+    <div id="offNote" class="offnote hidden">Device is OFF (deep sleep) — hold OK ~1&nbsp;s to power on. On the real device the slide switch is still the true battery cut.</div>
   </div>
 
   <div class="panel">
@@ -139,7 +143,7 @@
   function drawFastHLine(x, y, w, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, 1); }
 
   // ---- device state (mirrors main.cpp globals) -----------------------------
-  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6 };
+  const UI = { MENU:0, WAIT_TAG:1, TAG_READY:2, LIBRARY:3, EMULATE:4, WRITE_TAG:5, LOCK_CONFIRM:6, POWEROFF:7 };
   let uiState = UI.MENU, menuIndex = 0, uiMessage = '';
   let pendingPresent = true, pendingKind = 'TEXT', pendingValue = 'Hello from OpenTag';
   let bleConnected = true, nfcReady = true, keysReady = false;
@@ -147,8 +151,10 @@
   let amiCount = 3, amiSelected = 0, amiTop = 0;
   let emuMode = 0, emuName = '', emuUid = [0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
   let writeName = '', writeArmed = false, lockAskedAt = 0, tagCounter = 0;
+  let poweredOff = false, powerOffTimer = null;
   const statusline = document.getElementById('statusline');
-  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM'];
+  const offNote = document.getElementById('offNote');
+  const stateNames = ['MENU','WAIT_TAG','TAG_READY','LIBRARY','EMULATE','WRITE_TAG','LOCK_CONFIRM','POWEROFF'];
   function setStatus(t) { statusline.textContent = 'UI state: ' + stateNames[uiState] + (t ? ' — ' + t : ''); }
 
   // ---- drawScreen port ------------------------------------------------------
@@ -217,6 +223,9 @@
       setCursor(8, 82); print(emuMode === 1 ? 'NDEF note' : 'Tap console to use');
       setTextColor(C.LAVENDER); setCursor(8, 100); print('Killer slot 0 active');
       setTextColor(C.MINT); setCursor(8, 116); print('BACK: stop');
+    } else if (uiState === UI.POWEROFF) {
+      setTextColor(C.WHITE); setCursor(8, 52); print('Powering off');
+      setTextColor(C.MINT); setCursor(8, 76); print('BACK: cancel');
     } else {
       const items = ['Amiibo library', 'BLE sync', 'Write NDEF note', 'Emulate NDEF note', 'Clear NDEF note'];
       for (let i = 0; i < 5; i++) {
@@ -226,7 +235,7 @@
       }
       setTextColor(C.WHITE); setCursor(8, 116);
       if (pendingPresent) { print(pendingKind); print(': '); print(String(pendingValue).substring(0, 12)); }
-      else print('Sync a text or URL');
+      else print('Hold OK: power off');
       if (uiMessage.length) { setTextColor(C.LAVENDER); setCursor(8, 108); print(uiMessage.substring(0, 19)); }
     }
     setStatus(null);
@@ -235,6 +244,10 @@
   // ---- input handling with press/hold/release ------------------------------
   function pressed(state) {
     // mirrors handleButtons() in main.cpp
+    if (poweredOff) {                 // deep sleep: only a held OK wakes it
+      if (state === 'ok-hold') powerOn();
+      return;
+    }
     if (uiState === UI.TAG_READY) {
       if (state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Write cancelled'; }
       if (state === 'ok') {
@@ -266,10 +279,16 @@
       else if (state === 'ok' || state === 'up' || state === 'down' || state === 'back') { uiState = UI.MENU; uiMessage = 'Left unlocked'; }
     } else if (uiState === UI.EMULATE) {
       emuMode = 0; emuName = ''; uiState = UI.MENU; uiMessage = 'Emulation stopped';
+    } else if (uiState === UI.POWEROFF) {
+      // 700 ms cancel window; only BACK aborts (mirrors powerOffFromMenu)
+      if (state === 'back') cancelPowerOff();
     } else { // MENU
       if (state === 'up') { menuIndex = (menuIndex + 4) % 5; uiMessage = ''; }
       if (state === 'down') { menuIndex = (menuIndex + 1) % 5; uiMessage = ''; }
       if (state === 'back') uiMessage = "You're at the menu";
+      // Long-press OK: soft power off. The menu action fires on release
+      // ('ok'), so a hold never triggers it — same as the firmware.
+      if (state === 'ok-hold') { powerOffFlow(); return; }
       if (state === 'ok') {
         if (menuIndex === 0) {
           amiSelected = 0; amiTop = 0; uiState = UI.LIBRARY; uiMessage = '';
@@ -297,6 +316,29 @@
   function startEmulation(label, mode) {
     emuMode = mode; emuName = label; uiState = UI.EMULATE;
     if (mode === 2) { for (let i = 1; i < 7; i++) emuUid[i] = Math.floor(Math.random() * 256); }
+  }
+  // ---- soft power (mirrors enterDeepSleep / powerOffFromMenu) ----------------
+  function powerOffFlow() {            // hold OK at the menu
+    uiState = UI.POWEROFF; uiMessage = '';
+    drawScreen();
+    powerOffTimer = setTimeout(() => { // firmware's 700 ms cancel window
+      powerOffTimer = null;
+      poweredOff = true;               // deep sleep: panel dark, SoC parked
+      fillScreen('#000');
+      statusline.textContent = 'UI state: OFF (deep sleep)';
+      offNote.classList.remove('hidden');
+    }, 700);
+  }
+  function cancelPowerOff() {          // BACK inside the window
+    if (powerOffTimer) { clearTimeout(powerOffTimer); powerOffTimer = null; }
+    uiState = UI.MENU; uiMessage = 'Power off cancelled';
+    drawScreen();
+  }
+  function powerOn() {                 // hold OK while off
+    poweredOff = false;
+    offNote.classList.add('hidden');
+    uiState = UI.MENU; uiMessage = '';
+    drawScreen();
   }
 
   // ---- buttons: click = short press, hold ~1 s = long press ----------------

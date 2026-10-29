@@ -11,7 +11,7 @@
 | 5 | TP4056 USB-C charging module **with protection** (DW01A + 8205A) | 1 | Must be the 6-pad version with B+/B−/OUT+/OUT− |
 | 6 | MT3608 boost module (adjustable) | 1 | Set to 5.0–5.1 V before installation |
 | 7 | 1N5819 Schottky diode (DO-41) | 1 | Series element on the boost output |
-| 8 | SPDT mini toggle switch, PCB mount, ≥1 A (MTS-102 style, 3 pins @ 2.54 mm) | 1 | Or a ≥1 A slide switch with a 2.54 mm 3-pin row |
+| 8 | SPDT mini toggle switch, PCB mount, ≥1 A (MTS-102 style, 3 pins @ 2.54 mm) | 1 | Master battery cut. The firmware's "hold OK" soft-off is deep sleep, not a disconnect — the DevKitC's regulator and the boost still draw a few mA, so flip this switch for storage |
 
 ## PCB & wiring
 
@@ -40,7 +40,12 @@ The shell is a slim two-part clamshell (97.6 × 135.6 × 29.3 mm outside,
 holes with captive caps, a **fully open** NFC tap window in the back plate
 (no plastic over the Killer's antenna) ringed by an outside cradle that
 centres a controller or phone, a service window over the DevKitC's BOOT/RST
-pads, and a vented power-module tray. Cutouts are placed so nothing needs
+pads, and a vented power-module tray. Branding is printed in, not added
+later: an engraved `OPENTAG` wordmark on the front chin (below the buttons,
+using the same pixel font as the OLED and the PCB silkscreen) and an
+engraved halo ring around the NFC cradle marking the tap zone — both
+0.4–0.6 mm deep, so they survive handling and need no supports.
+Cutouts are placed so nothing needs
 supports: both halves print as drawn (front face-down, plate flat-side-down).
 
 | # | Part | Qty | Material |
