@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Primary button: mint fill, dark text, 13 px radius (web button). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#3310131b">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/mint"/>
+            <corners android:radius="13dp"/>
+        </shape>
+    </item>
+</ripple>

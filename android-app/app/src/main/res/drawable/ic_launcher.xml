@@ -1,26 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Simple NFC-waves mark used as the launcher icon (vector, no binaries). -->
+<!-- Launcher icon: the web sync page's mint brand mark (rounded mint square)
+     carrying the NFC-waves glyph in the dark ink color. Vector, no binaries. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp"
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
     <path
-        android:fillColor="#101820"
-        android:pathData="M4,4h40v40h-40z"/>
+        android:fillColor="#b6f36a"
+        android:pathData="M12,4 h24 a8,8 0 0 1 8,8 v24 a8,8 0 0 1 -8,8 h-24 a8,8 0 0 1 -8,-8 v-24 a8,8 0 0 1 8,-8 z"/>
     <path
-        android:strokeColor="#B5F7D0"
+        android:strokeColor="#10131b"
         android:strokeWidth="3"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
         android:pathData="M14,30 C14,22 20,16 28,14"/>
     <path
-        android:strokeColor="#B5F7D0"
+        android:strokeColor="#10131b"
         android:strokeWidth="3"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
         android:pathData="M14,38 C14,26 24,16 36,12"/>
     <path
-        android:fillColor="#B5F7D0"
+        android:fillColor="#10131b"
         android:pathData="M28,10 l6,2 -4,5z"/>
 </vector>

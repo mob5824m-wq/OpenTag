@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Palette lifted 1:1 from the web sync page (device/web-sync/index.html). -->
+<resources>
+    <color name="bg">#11151c</color>
+    <color name="glow">#28334b</color>
+    <color name="panel">#1b212b</color>
+    <color name="card_a">#202735</color>
+    <color name="card_b">#1a2029</color>
+    <color name="card_line">#2b3442</color>
+    <color name="item_bg">#141a22</color>
+    <color name="item_line">#293341</color>
+    <color name="line">#303a49</color>
+    <color name="text">#f4f6f8</color>
+    <color name="muted">#9ba7b7</color>
+    <color name="mint">#b6f36a</color>
+    <color name="mint_dark">#10131b</color>
+    <color name="mint_line">#5b7135</color>
+    <color name="violet">#bba8ff</color>
+    <color name="violet_line">#554c78</color>
+    <color name="bad">#ff8b8b</color>
+    <color name="bad_line">#7a4040</color>
+    <color name="warn">#ffcc9b</color>
+    <color name="secondary">#2a3341</color>
+    <color name="input_bg">#111720</color>
+    <color name="log_bg">#0d1117</color>
+    <color name="log_line">#232c39</color>
+    <color name="log_text">#a8b4c6</color>
+    <color name="dot_idle">#697789</color>
+</resources>
