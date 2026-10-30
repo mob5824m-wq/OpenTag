@@ -6,7 +6,7 @@
 on the carrier PCB (full signal truth in the tables below — the drawing is
 illustrative).*
 
-`opentag-carrier.kicad_pcb` (regenerate with `python3 generate_carrier_pcb.py`,
+`opentag-carrier.kicad_pcb` (regenerate with `python3 hardware/pcb/generate_carrier_pcb.py`,
 which self-checks connectivity and clearance before writing the file) is a
 90 × 60 mm, 2-layer, all-through-hole board. Two ways to fabricate it:
 
@@ -73,7 +73,14 @@ LiPo cell ── J_BAT ─┬─ J_CHG B+/B─ ── TP4056 B+/B─      (charg
 
 A Qi receiver module makes the OpenTag charge on any Qi pad — no firmware
 change required (the TP4056 still runs the charge, so the port-slot LEDs and
-the light pipe behave exactly as over USB-C).
+the light pipe behave exactly as over USB-C). A matching **transmitter**
+turns the printed desk stand into a charging dock: the stand's rear panel
+carries an engraved ring + bolt on its back face — stick a 5 V Qi
+transmitter coil (⌀ ≤ 40 mm, ferrite-backed) on that mark, wired to a 5 V
+supply, and the docked device charges in place. The mark is centred under
+the docked device's receiver coil as far up the 105 mm panel as it fits,
+but the ~10° lean offsets the two coils by ~15 mm, so expect a gentle
+charge rate rather than full power.
 
 ```
 Qi receiver OUT+ ── D2 (anode→cathode) ── TP4056 VCC (USB-C jack VBUS)

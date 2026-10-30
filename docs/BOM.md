@@ -10,6 +10,7 @@
 | 4 | LiPo cell 805040 (3.7 V, ~800 mAh, with protection + JST-PH lead) | 1 | Any 3.7 V cell that fits the shell bay; adjust `bat_*` in the `.cad` |
 | 5 | TP4056 USB-C charging module **with protection** (DW01A + 8205A) | 1 | Must be the 6-pad version with B+/B−/OUT+/OUT− |
 | 5b | Qi receiver module, 5 V, ⌀ ≤ 40 mm ferrite-backed coil (optional) | 1 | Wireless charging: coil under the battery, see `WIRING.md` |
+| 5c | Qi transmitter module, 5 V in / 5 V out, ⌀ ≤ 40 mm coil (optional) | 1 | Turns the printed desk stand into a charger: stick it on the engraved ring + bolt on the stand's rear panel, see `WIRING.md` |
 | 6 | MT3608 boost module (adjustable) | 1 | Set to 5.0–5.1 V before installation |
 | 7 | 1N5819 Schottky diode (DO-41) | 2 | One on the boost output; the second (optional) ORs the Qi receiver into the TP4056 input |
 | 7b | Resistor 22 kΩ (optional) | 1 | Charge-sense wire: TP4056 /CHRG → GPIO21, lights the on-screen bolt |
@@ -21,7 +22,7 @@
 
 | # | Part | Qty | Notes |
 |---|------|----|-------|
-| 9 | OpenTag carrier PCB | 1 | `hardware/pcb/opentag-carrier.kicad_pcb`, 90 × 60 mm, 2 layers, 1.6 mm, HASL/ENIG |
+| 9 | OpenTag carrier PCB | 1 | `../hardware/pcb/opentag-carrier.kicad_pcb`, 90 × 60 mm, 2 layers, 1.6 mm, HASL/ENIG |
 | 10 | Female header 1×22, 2.54 mm | 2 | DevKit socket |
 | 11 | Female header 1×7, 2.54 mm | 1 | OLED socket |
 | 12 | Male header 1×4, 2.54 mm | 3 | Killer, TP4056, MT3608 |
@@ -32,7 +33,7 @@
 | 17 | Hook-up wire 22–24 AWG | ~8 | TP4056/MT3608 to their headers |
 | 18 | Double-sided foam tape / zip ties | — | Securing modules in the shell tray |
 
-## Printed parts (`hardware/cad/opentag_shell.cad`)
+## Printed parts (`../hardware/cad/opentag_shell.cad`)
 
 Print-ready STLs are in `hardware/cad/stl/` (front shell, back plate, button
 cap — print 4 caps — and the optional desk stand). Regenerate them with OpenSCAD

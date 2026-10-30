@@ -57,7 +57,7 @@ Pull requests that touch `android-app/` only build — a compile gate.
   entries), open it on your phone and allow installs from that source. Each
   release upgrades in place over the previous one.
 - **Signing:** releases are signed with the committed *open* key in
-  [`keys/`](keys/README.md) — stable, so upgrades work, but public, so it
+  [`android-app/keys/`](../android-app/keys/) (see [`SIGNING-KEY.md`](SIGNING-KEY.md)) — stable, so upgrades work, but public, so it
   proves nothing about origin; trust the Releases page, not the signature.
   Swap in your own private key via the `OT_KEYSTORE_B64` /
   `OT_KEYSTORE_PASSWORD` repo secrets if you prefer a closed signature.

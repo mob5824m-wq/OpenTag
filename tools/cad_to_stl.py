@@ -56,6 +56,13 @@ def cyl_x(d, h, seg=SEG):
         trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
     return m
 
+def cyl_y(d, h, seg=SEG):
+    """Cylinder along +y (base at the translate origin, like cube())."""
+    m = cyl(d, h, seg)
+    m.apply_transform(
+        trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0]))
+    return m
+
 def _ring_mesh(r0, r1, h, seg):
     """Cylinder/frustum, base z=0 (r0 at z=0, r1 at z=h)."""
     ang = [2 * math.pi * i / seg for i in range(seg)]
@@ -220,6 +227,59 @@ def bolt_boxes(p):
                                 p["bolt_cy"] + (2.5 - c) * px - eps / 2,
                                 p["bolt_z0"] + (7 - r) * px - eps / 2]))
     return boxes
+
+
+def stand_mark_boxes(p):
+    """Engraved wordmark on the stand brace's front face, mirroring the
+    .cad's stand_wordmark(): viewer in front of the dock (looking +y:
+    up = +z, right = +x), so glyph columns advance +x and bit 0 is the top
+    row — no mirroring. Cubes span y = face - 0.01 .. face + depth (flush
+    floor, overshoot outside the face); same 0.02 mm diagonal-pixel overlap
+    as brand_boxes()."""
+    text, font = p["_brand_text"], p["_brand_font"]
+    px, dep = p["stand_mark_px"], p["stand_mark_depth"]
+    eps = 0.02
+    n = len(text)
+    W = (n * 6 - 1) * px                       # wordmark width; caps 7 px
+    zb = p["stand_base_t"] + (p["stand_brace_h"] - 7 * px) / 2
+    y0 = p["stand_panel_front"] - p["stand_brace_d"] - 0.01
+    boxes = []
+    for i, ch in enumerate(text):
+        cols = font.get(ch)
+        if ch == " " or cols is None:
+            continue
+        for c in range(5):
+            for r in range(8):
+                if (cols[c] >> r) & 1:
+                    boxes.append(T(cube(px + eps, dep + 0.01, px + eps),
+                                   [-W / 2 + (i * 6 + c) * px - eps / 2,
+                                    y0, zb + (6 - r) * px - eps / 2]))
+    return boxes
+
+
+def stand_qi_cuts(p):
+    """Qi-transmitter locator on the stand panel's back face, mirroring the
+    .cad's stand_qi_mark(): halo-style ring (outer disc stand_qi_t deep,
+    inner disc 0.02 deeper so the two groove floors never land coincident)
+    plus a centred bolt. Viewer behind the dock (looking -y: up = +z,
+    right = -x), so the bolt's glyph columns advance -x."""
+    pb = p["stand_panel_front"] + p["stand_panel_t"]   # panel back face
+    cx, cz = p["stand_qi_cx"], p["stand_qi_cz"]
+    t, d, w = p["stand_qi_t"], p["stand_qi_d"], p["stand_qi_w"]
+    cuts = [
+        T(cyl_y(d, t + 0.01), [cx, pb - t, cz]),
+        T(cyl_y(d - 2 * w, t + 0.03), [cx, pb - t - 0.02, cz]),
+    ]
+    px, dep = p["stand_qi_bolt_px"], p["stand_qi_bolt_depth"]
+    eps = 0.02
+    for c in range(6):
+        for r in range(8):
+            if (p["_bolt_cols"][c] >> r) & 1:
+                cuts.append(T(cube(px + eps, dep + 0.01, px + eps),
+                              [cx + (2.5 - c) * px - eps / 2,
+                               pb - dep,
+                               cz + (3.5 - r) * px - eps / 2]))
+    return cuts
 
 
 def front_shell(p):
@@ -435,7 +495,10 @@ def desk_stand(p):
     lip = T(rbox(p["stand_w"], p["stand_lip_t"], p["stand_lip_h"],
                  p["stand_lip_r"]),
             [0, p["stand_lip_front"] + p["stand_lip_t"] / 2, p["stand_base_t"]])
-    return union([base, panel, brace, lip])
+    # engraved OPENTAG wordmark (brace front) + Qi-transmitter locator
+    # ring/bolt (panel back), mirroring the .cad's desk_stand() difference
+    return difference([union([base, panel, brace, lip])]
+                      + stand_mark_boxes(p) + stand_qi_cuts(p))
 
 def button_cap(p):
     head = cyl(p["cap_d"], p["cap_h"])
@@ -552,6 +615,29 @@ def verify(p, front, back, cap, stand):
                  + p["stand_w"] * p["stand_brace_d"] * p["stand_brace_h"]
                  + rbox_vol(p["stand_w"], p["stand_lip_t"], p["stand_lip_h"],
                             p["stand_lip_r"]))
+    # the engraved marks shed a little plastic: wordmark + bolt pixel cubes
+    # (inflated 0.02, so the naive sum overcounts corner overlaps by a few
+    # mm^3 — noise under the 2% tolerance) and the Qi ring (outer disc
+    # stand_qi_t deep + inner disc 0.02 deeper; the bolt pixels sit inside
+    # that recess, so they only add bolt_depth - t - 0.02 each)
+    def lit_px(text, font):
+        n = 0
+        for ch in text:
+            cols = font.get(ch)
+            if ch == " " or cols is None:
+                continue
+            n += sum(1 for c in range(5) for r in range(8)
+                     if (cols[c] >> r) & 1)
+        return n
+    stand_vol -= (lit_px(p["_brand_text"], p["_brand_font"])
+                  * (p["stand_mark_px"] + 0.02) ** 2 * p["stand_mark_depth"]
+                  + math.pi * (p["stand_qi_d"] / 2) ** 2 * p["stand_qi_t"]
+                  + math.pi * (p["stand_qi_d"] / 2 - p["stand_qi_w"]) ** 2
+                    * 0.02
+                  + sum(1 for col in p["_bolt_cols"] for r in range(8)
+                        if (col >> r) & 1)
+                  * (p["stand_qi_bolt_px"] + 0.02) ** 2
+                  * (p["stand_qi_bolt_depth"] - p["stand_qi_t"] - 0.02))
     ok &= check(stand, "desk stand",
                 [p["stand_w"], p["stand_base_d"],
                  p["stand_base_t"] + p["stand_panel_h"]],
@@ -735,6 +821,27 @@ def verify(p, front, back, cap, stand):
     # desk stand: cradle channel empty, stops solid. The docked device at
     # the 9.83 deg lean spans y ~6.9 (screen face on the lip corner) to
     # ~35.8 (bottom-rear corner on the base), so probe the channel between.
+    # Engravings: first lit / first dark wordmark pixel on the brace face,
+    # the Qi ring groove centreline vs just outside it, the recessed disc
+    # inside the ring, and bolt pixel (col 4, row 1).
+    spx = p["stand_mark_px"]
+    sw = (len(p["_brand_text"]) * 6 - 1) * spx
+    szb = p["stand_base_t"] + (p["stand_brace_h"] - 7 * spx) / 2
+    sy0 = p["stand_panel_front"] - p["stand_brace_d"]     # brace front face
+    si, sc, sr = next((i, c, r) for i, ch in enumerate(p["_brand_text"])
+                      if ch in p["_brand_font"]
+                      for c in range(5) for r in range(8)
+                      if (p["_brand_font"][ch][c] >> r) & 1)
+    di, dc, dr = next((i, c, r) for i, ch in enumerate(p["_brand_text"])
+                      if ch in p["_brand_font"]
+                      for c in range(5) for r in range(8)
+                      if not (p["_brand_font"][ch][c] >> r) & 1)
+    pb = p["stand_panel_front"] + p["stand_panel_t"]      # panel back face
+    qi_r = p["stand_qi_d"] / 2 - p["stand_qi_w"] / 2      # groove centreline
+    qc, qz = p["stand_qi_cx"], p["stand_qi_cz"]
+    qbx = qc + (2.5 - 4) * p["stand_qi_bolt_px"]          # bolt pixel (4,1)
+    qbz = qz + (3.5 - 1) * p["stand_qi_bolt_px"]
+
     probe(stand, [
         ([0, 55.2, 50], "solid"),    # back panel
         ([0, 48, 50], "void"),       # cradle channel (clear of the brace)
@@ -746,6 +853,20 @@ def verify(p, front, back, cap, stand):
         ([0, 0, 1.2], "solid"),      # base scoop
         ([0, 0, 5], "void"),         # above the scoop
         ([60, 0, 1.2], "void"),      # beyond the base's east edge
+        # --- engraved marks ---
+        ([-sw / 2 + (si * 6 + sc) * spx + spx / 2, sy0 + p["stand_mark_depth"] / 2,
+          szb + (6 - sr) * spx + spx / 2], "void"),       # wordmark pixel
+        ([-sw / 2 + (si * 6 + sc) * spx + spx / 2,
+          sy0 + p["stand_mark_depth"] + 0.15,
+          szb + (6 - sr) * spx + spx / 2], "solid"),      # under engraving
+        ([-sw / 2 + (di * 6 + dc) * spx + spx / 2, sy0 + p["stand_mark_depth"] / 2,
+          szb + (6 - dr) * spx + spx / 2], "solid"),      # dark pixel on face
+        ([qc + qi_r, pb - p["stand_qi_t"] / 2, qz], "void"),    # ring groove
+        ([qc + qi_r + 1.5, pb - p["stand_qi_t"] / 2, qz], "solid"),  # outside
+        ([qc - 12, pb - 0.2, qz - 12], "void"),          # recessed disc
+        ([qc - 12, pb - 0.5, qz - 12], "solid"),         # under the disc
+        ([qbx, pb - p["stand_qi_bolt_depth"] / 2, qbz], "void"),   # bolt pixel
+        ([qbx, pb - p["stand_qi_bolt_depth"] - 0.15, qbz], "solid"),  # under
     ])
     # cradle rays: looking down the channel only the base is in the way
     # (top + bottom faces = 2 hits); fore-aft rays cross the lip (2 hits)

@@ -20,7 +20,7 @@ android {
 
     // Release signing: a stable signature so CI-built releases install over
     // one another (Android refuses signature changes on upgrade). Default is
-    // the committed "open" key in keys/ — see keys/README.md for what that
+    // the committed "open" key in keys/ — see docs/SIGNING-KEY.md for what that
     // does and does not give you. Override with OT_KEYSTORE_FILE /
     // OT_STORE_PASSWORD / OT_KEY_ALIAS / OT_KEY_PASSWORD env vars (e.g. a
     // private key stored as repo secrets).

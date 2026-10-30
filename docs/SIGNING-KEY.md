@@ -14,7 +14,7 @@ Releases page) as the real trust anchor.
 
 - keystore: PKCS#12, alias `opentag`, store **and** key password `opentag`
 - self-signed RSA-2048, valid ~30 years
-- `app/build.gradle.kts` uses it by default; builds stay reproducible for
+- `android-app/app/build.gradle.kts` uses it by default; builds stay reproducible for
   anyone cloning the repo.
 
 ## Using a private key instead

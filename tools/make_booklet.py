@@ -280,7 +280,11 @@ def page_power(pdf):
         "The optional printed desk stand leans the OpenTag back about ten "
         "degrees with the screen up and readable; the charge port ends up "
         "just behind the stand's tall back panel, so it still charges while "
-        "docked with the cable dropped behind.",
+        "docked with the cable dropped behind. The stand's brace carries "
+        "the engraved OPENTAG wordmark, and an engraved ring with a bolt "
+        "on the back of the panel marks where to stick a Qi transmitter "
+        "coil - the docked device then charges wirelessly in its stand "
+        "(gently: the lean offsets the coils).",
         "Optional wireless charging: a Qi receiver coil inside the back "
         "charges from any Qi pad - line the engraved ring on the back up "
         "with the pad, and a small bolt icon appears at the top-right of "
@@ -553,11 +557,11 @@ def page_inside(pdf):
     pdf.sheet("Inside your OpenTag")
     pdf.body("Every module of the handheld and how they connect, on the "
              "open-source carrier board. The full wire-by-wire guide with "
-             "pin tables lives in hardware/pcb/WIRING.md in the project "
+             "pin tables lives in docs/WIRING.md in the project "
              "repository - this is the map for identifying parts when you "
              "open the case.")
     pdf.ln(1)
-    img = ROOT / "hardware" / "pcb" / "wiring_diagram.png"
+    img = ROOT / "docs" / "wiring_diagram.png"
     w = pdf.W - pdf.l_margin - pdf.r_margin
     pdf.image(str(img), x=pdf.l_margin, w=w)
     pdf.ln(2)

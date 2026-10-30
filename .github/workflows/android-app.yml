@@ -10,7 +10,7 @@
 #
 # Signing: the committed open key in android-app/keys/ by default, or the
 # OT_KEYSTORE_B64 / OT_KEYSTORE_PASSWORD repo secrets when set — see
-# android-app/keys/README.md.
+# docs/SIGNING-KEY.md.
 name: android-app
 
 on:
@@ -149,7 +149,7 @@ jobs:
 
           Install: download the .apk below, open it on your phone and allow
           installs from that source. It upgrades in place over previous
-          app releases (stable signing key - see android-app/keys/README.md
+          app releases (stable signing key - see docs/SIGNING-KEY.md
           in the repository).
 
           The .sha256 file lists the APK's checksum."

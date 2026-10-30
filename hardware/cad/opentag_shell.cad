@@ -1,8 +1,14 @@
 // ---------------------------------------------------------------------------
 // OpenTag handheld shell — parametric, two printed parts + button caps.
 //
-//   part = "both" | "front" | "back"
+//   part = "both" | "front" | "back" | "stand"
 //
+// DESK STAND : flat-printed rest for the assembled device — base, tall rear
+//               panel (the device leans on its top edge), brace and front
+//               lip. The brace's front face carries the engraved OPENTAG
+//               wordmark, and the panel's back face carries an engraved
+//               ring + bolt marking where to stick a 5 V Qi transmitter
+//               coil so the docked device charges in its stand.
 // FRONT SHELL : rectangular OLED window, four button holes (UP/DOWN/OK/BACK),
 //               USB + power-switch slots, screw bosses.
 // BACK PLATE  : carrier-PCB standoffs + mid-span button posts, PN532Killer
@@ -154,6 +160,17 @@ stand_brace_d = 4; stand_brace_h = 48;    // slim gusset under the panel's
                                 // printable; the docked device clears it)
 stand_brace_ov = 0.5;           // brace fuses 0.5 mm into the panel (a
                                 // face-touching union leaves coincident faces)
+// stand branding / charging mark (both engraved on vertical faces, printable
+// as drawn: the grooves are <= 1.55 mm wide and <= 0.6 mm deep)
+stand_mark_px = 1.5;            // wordmark pixel size on the brace front
+stand_mark_depth = 0.6;         // engraved into the brace's front face
+stand_qi_d = 44.5; stand_qi_w = 0.5; stand_qi_t = 0.4;
+                                // transmitter locator ring, halo-style
+stand_qi_bolt_px = 2.0; stand_qi_bolt_depth = 0.6;
+                                // 6x8 px bolt at the ring centre
+stand_qi_cx = 23;               // ring centre: under the docked device's
+stand_qi_cz = 84;               // receiver coil, as far up the 105 mm panel
+                                // as a 44.5 ring fits (top edge z = 107.4)
 
 // ---- back-plate cutouts / supports ------------------------------------------------
 svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
@@ -466,22 +483,83 @@ module assembly_front() { front_shell(); }
 // ---------------------------------------------------------------------------
 // DESK STAND (prints flat on the base; no supports needed)
 // ---------------------------------------------------------------------------
+// Engraved wordmark on the stand brace's front face (plane y = 50). For a
+// viewer standing in front of the dock (looking +y): up = +z, right = +x,
+// so glyph columns advance +x and bit 0 is the top row — no mirroring.
+// Cubes span y = face - 0.01 .. face + depth (floor flush at full depth,
+// 0.01 overshoot outside the face). Pixels are inflated by 0.02 mm like
+// brand_mark() so corner-touching glyph pixels overlap instead of
+// pinching the surface.
+module stand_wordmark() {
+  n = len(brand_text);
+  W = (n * 6 - 1) * stand_mark_px;      // wordmark width; caps 7 px tall
+  zb = stand_base_t + (stand_brace_h - 7 * stand_mark_px) / 2;
+  for (i = [0 : n - 1]) {
+    ch = brand_text[i];
+    if (ch != " " && ord(ch) >= 65 && ord(ch) <= 90)
+      for (c = [0 : 4])
+        for (r = [0 : 7])
+          if (((brand_font[ord(ch) - 65][1][c]) >> r & 1) != 0)
+            translate([-W/2 + (i*6 + c) * stand_mark_px - 0.01,
+                       stand_panel_front - stand_brace_d - 0.01,
+                       zb + (6 - r) * stand_mark_px - 0.01])
+              cube([stand_mark_px + 0.02, stand_mark_depth + 0.01,
+                    stand_mark_px + 0.02]);
+  }
+}
+
+// Engraved Qi-transmitter locator on the stand panel's BACK face (plane
+// y = 56.4): a halo-style ring + centred bolt, laid out for a viewer
+// BEHIND the dock (looking -y: up = +z, right = -x), so the bolt's glyph
+// columns advance -x. Stick a 5 V Qi transmitter coil (<= 40 mm,
+// ferrite-backed) on this mark and the docked device charges in its
+// stand. The ring is centred under the docked receiver as far up the
+// panel as it fits; the 9.82 deg lean still offsets the coils, so expect
+// a gentle charge rate rather than full power.
+module stand_qi_mark() {
+  pb = stand_panel_front + stand_panel_t;      // panel back face (y)
+  // ring groove: outer disc cut stand_qi_t deep, inner disc 0.02 deeper
+  // so the two groove floors never land coincident (same trick as the
+  // halo/qi rings on the device's back plate)
+  translate([stand_qi_cx, pb - stand_qi_t, stand_qi_cz])
+    rotate([-90, 0, 0]) cylinder(d = stand_qi_d, h = stand_qi_t + 0.01);
+  translate([stand_qi_cx, pb - stand_qi_t - 0.02, stand_qi_cz])
+    rotate([-90, 0, 0])
+      cylinder(d = stand_qi_d - 2*stand_qi_w, h = stand_qi_t + 0.03);
+  // centred bolt, bit 0 = top row, columns advance -x
+  for (c = [0 : 5])
+    for (r = [0 : 7])
+      if ((bolt_cols[c] >> r & 1) != 0)
+        translate([stand_qi_cx + (2.5 - c) * stand_qi_bolt_px - 0.01,
+                   pb - stand_qi_bolt_depth,
+                   stand_qi_cz + (3.5 - r) * stand_qi_bolt_px - 0.01])
+          cube([stand_qi_bolt_px + 0.02, stand_qi_bolt_depth + 0.01,
+                stand_qi_bolt_px + 0.02]);
+}
+
 module desk_stand() {
-  // base: rear edge flush with the panel's back face
-  translate([0, stand_front_y + stand_base_d/2, 0])
-    rbox(stand_w, stand_base_d, stand_base_t, stand_base_r);
-  // back panel: the docked device's back face rests on its top edge
-  // (z = base_t + panel_h = 107.4; the charge port ends up just behind it)
-  translate([0, stand_panel_front + stand_panel_t/2, stand_base_t])
-    rbox(stand_w, stand_panel_t, stand_panel_h, stand_panel_r);
-  // brace: slim gusset tying the panel's lower front to the base (also
-  // keeps the thin panel printable); at the 9.82 deg lean the docked
-  // device's back plane clears its front face by ~6 mm at the brace top
-  translate([-stand_w/2, stand_panel_front - stand_brace_d, stand_base_t])
-    cube([stand_w, stand_brace_d + stand_brace_ov, stand_brace_h]);
-  // front lip: its top-rear corner catches the docked device's screen face
-  translate([0, stand_lip_front + stand_lip_t/2, stand_base_t])
-    rbox(stand_w, stand_lip_t, stand_lip_h, stand_lip_r);
+  difference() {
+    union() {
+    // base: rear edge flush with the panel's back face
+    translate([0, stand_front_y + stand_base_d/2, 0])
+      rbox(stand_w, stand_base_d, stand_base_t, stand_base_r);
+    // back panel: the docked device's back face rests on its top edge
+    // (z = base_t + panel_h = 107.4; the charge port ends up just behind it)
+    translate([0, stand_panel_front + stand_panel_t/2, stand_base_t])
+      rbox(stand_w, stand_panel_t, stand_panel_h, stand_panel_r);
+    // brace: slim gusset tying the panel's lower front to the base (also
+    // keeps the thin panel printable); at the 9.82 deg lean the docked
+    // device's back plane clears its front face by ~6 mm at the brace top
+    translate([-stand_w/2, stand_panel_front - stand_brace_d, stand_base_t])
+      cube([stand_w, stand_brace_d + stand_brace_ov, stand_brace_h]);
+    // front lip: its top-rear corner catches the docked device's screen face
+    translate([0, stand_lip_front + stand_lip_t/2, stand_base_t])
+      rbox(stand_w, stand_lip_t, stand_lip_h, stand_lip_r);
+    }
+    // branding + Qi-transmitter locator
+    stand_wordmark();
+    stand_qi_mark();
+  }
 }
 
 if (part == "stand") desk_stand();
@@ -499,7 +577,9 @@ if (part == "both") {
 //  * back plate : flat side down; post feet and tray walls are printable
 //    as drawn (all overhangs are short bridges).
 //  * desk stand : flat on its base; the thin panel is tied to the base by
-//    the brace, so no supports are needed.
+//    the brace, so no supports are needed. The wordmark on the brace and
+//    the Qi ring + bolt on the panel's back are shallow vertical-face
+//    grooves (<= 1.55 mm wide, <= 0.6 mm deep) — printable as drawn.
 //  * Use PLA/PETG; keep carbon- or metal-filled filaments away from the NFC
 //    tap zone. Verify the killer bay size against your PN532Killer PCB, the
 //    button-cap pusher length against your switch height (~8.5 mm assumed),

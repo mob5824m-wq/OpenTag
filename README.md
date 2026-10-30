@@ -106,7 +106,7 @@ cable. No PCB, no soldering — USB powers the whole bench setup.
    pio run -e opentag_s3 -t uploadfs    # LittleFS: on-device amiibo storage
    ```
 3. Wire the modules (full map and rationale in
-   [`device/HARDWARE.md`](device/HARDWARE.md)):
+   [`docs/HARDWARE.md`](docs/HARDWARE.md)):
 
    | Connection | DevKit pin (GPIO) | Module side |
    |---|---|---|
@@ -145,8 +145,8 @@ files. Emulation needs neither.
    generator.
 2. **Print the shell** — [`hardware/cad/stl/`](hardware/cad/stl/): front
    shell, back plate, 4 button caps (PLA/PETG, no supports needed).
-3. **Assemble** per [`hardware/pcb/WIRING.md`](hardware/pcb/WIRING.md);
-   parts and budget in [`hardware/BOM.md`](hardware/BOM.md) (≈ $72–102
+3. **Assemble** per [`docs/WIRING.md`](docs/WIRING.md);
+   parts and budget in [`docs/BOM.md`](docs/BOM.md) (≈ $72–102
    complete). Print [`docs/opentag-user-guide.pdf`](docs/opentag-user-guide.pdf)
    as the user manual.
 4. The device is identical to the bench build — continue from step 5 in
@@ -163,7 +163,7 @@ on) + SSD1351 OLED + four buttons (UP / DOWN / OK / BACK) + LiPo power
 (TP4056 + MT3608). The NFC
 board talks HSU UART to the ESP32; a 540-byte page image per tag is all the
 firmware pushes. The SW-corner tab is a lanyard / keyring loop (4.2 mm bore,
-continuous through the front/back seam). See [`device/HARDWARE.md`](device/HARDWARE.md) for the full
+continuous through the front/back seam). See [`docs/HARDWARE.md`](docs/HARDWARE.md) for the full
 interface map and [`hardware/`](hardware/) for:
 
 | File | Contents |
@@ -171,12 +171,15 @@ interface map and [`hardware/`](hardware/) for:
 | `hardware/pcb/opentag-carrier.kicad_pcb` | 90 × 60 mm 2-layer carrier, all through-hole |
 | `hardware/pcb/generate_carrier_pcb.py` | Regenerates the PCB and self-checks connectivity + clearance |
 | `hardware/pcb/gerbers/` | Fab-ready Gerber set + Excellon drill + `opentag-gerbers.zip` — the generator writes them and re-parses them to verify against the model |
-| `hardware/pcb/WIRING.md` | Assembly, power chain, signal map, bring-up |
+| `docs/WIRING.md` | Assembly, power chain, signal map, bring-up |
+| `docs/HARDWARE.md` | Device interface baseline — the contract the firmware implements (buttons, display, NFC, power, USB) |
 | `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps, with the ⚡-marked USB-C charge port on the west wall and a lanyard loop tab on the SW corner (OpenSCAD source; `.cad` is the project's extension) |
 | `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |
 | `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
-| `hardware/BOM.md` | Parts list and budget (≈ $72–102) |
-| `docs/opentag-user-guide.pdf` | The printed instruction booklet — 10 A5 pages covering charging, buttons, the library, V3 amiibo, writes and troubleshooting |
+| `docs/BOM.md` | Parts list and budget (≈ $72–102) |
+| `docs/opentag-user-guide.pdf` | The printed instruction booklet — 15 A5 pages covering charging, the desk stand, buttons, the library, V3 amiibo, BLE sync, writes, USB drive and troubleshooting |
+| `docs/ANDROID-APP.md` | Android companion app — features, BLE protocol, releases |
+| `docs/SIGNING-KEY.md` | The committed APK signing key: why it's public, and how to swap in a private one |
 | `tools/make_booklet.py` | Regenerates the booklet (`pip install fpdf2`); its cover art is parsed straight from the shell's own wordmark font and bolt icon |
 
 ## Updating the firmware (keeps your amiibos)
@@ -199,7 +202,7 @@ falls back to building locally with `pio run`.
 ## Android app
 
 Open [`android-app/`](android-app/) in Android Studio and run — see
-[`android-app/README-ANDROID.md`](android-app/README-ANDROID.md). Platform
+[`docs/ANDROID-APP.md`](docs/ANDROID-APP.md). Platform
 APIs only, no dependencies; minSdk 23.
 
 ## Tests and gates (host-native, no hardware)
@@ -303,8 +306,14 @@ optional printed **desk stand**
 holds the OpenTag leaning back at ~10° with the screen up and readable —
 OLED end down at the front lip, the back resting on the stand's tall rear
 panel. The chin's charge port ends up just behind the panel's top edge, so
-the device still charges while docked with the cable dropped behind. **Wireless:** with
-the optional Qi receiver coil fitted (see `hardware/pcb/WIRING.md` — it sits
+the device still charges while docked with the cable dropped behind. The
+stand's front brace carries an engraved **OPENTAG** wordmark, and the back
+of the rear panel carries an engraved ring + bolt: stick a 5 V Qi
+transmitter coil (≤ 40 mm, ferrite-backed) on that mark and the docked
+device charges wirelessly — the mark is centred under the device's
+receiver coil as far up the panel as it fits, but the ~10° lean still
+offsets the coils, so expect a gentle charge rate rather than full power. **Wireless:** with
+the optional Qi receiver coil fitted (see `docs/WIRING.md` — it sits
 under the battery on the engraved ring, east of the tap halo), any Qi pad
 charges the device through the same TP4056, and the bolt icon at the
 top-right of the screen confirms the pad is coupled. Soft-off still draws a few mA
@@ -360,7 +369,7 @@ press OK/BACK to eject and get the console back). New dumps still go on
 over BLE; the snapshot is rebuilt every time you dock.
 
 **Battery telemetry:** with the optional 100k/100k divider fitted
-(`hardware/pcb/WIRING.md`), the header shows the cell's charge percentage
+(`docs/WIRING.md`), the header shows the cell's charge percentage
 between the wordmark and the BLE indicator — grey normally, red at/below
 15 %. Below 3.35 V the device warns once (`Battery low` + a chirp with the
 piezo fitted); below 3.25 V sustained for 30 s it runs the clean
@@ -409,9 +418,9 @@ browser with [`device/web-preview/index.html`](device/web-preview/index.html).
 - The NDEF-note emulation personality uses a random, persisted 7-byte UID.
 - **Wireless charging is a hardware option**: a ⌀ ≤ 40 mm ferrite-backed Qi
   receiver coil (under the battery, on the engraved ring) feeds the TP4056
-  through a second Schottky — see `hardware/pcb/WIRING.md`. No firmware
+  through a second Schottky — see `docs/WIRING.md`. No firmware
   change needed; the optional 22 kΩ sense wire (GPIO21) lights the bolt.
-- `device/HARDWARE.md` documents the interface baseline; the PCB is
+- `docs/HARDWARE.md` documents the interface baseline; the PCB is
   self-checked by its generator but has not been manufactured in this repo —
   review it in KiCad before ordering.
 
