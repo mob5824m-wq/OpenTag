@@ -45,6 +45,26 @@ gradle assembleDebug        # needs a local Gradle 8.7+ / Android SDK 34
 The project deliberately avoids AndroidX and every third-party library so it
 builds offline once the toolchain itself is present.
 
+## Automatic releases
+
+Every merge to `main` triggers [.github/workflows/android-app.yml](../.github/workflows/android-app.yml):
+it builds a **signed release APK** and publishes it as a GitHub release tagged
+`app-v<version>` (patch-bumped each time, `versionCode` = the run number).
+Pull requests that touch `android-app/` only build — a compile gate.
+
+- **Installing:** grab the newest `opentag-android-*.apk` from the repo's
+  [Releases](https://github.com/mob5824m-wq/OpenTag/releases) (the `app-v*`
+  entries), open it on your phone and allow installs from that source. Each
+  release upgrades in place over the previous one.
+- **Signing:** releases are signed with the committed *open* key in
+  [`keys/`](keys/README.md) — stable, so upgrades work, but public, so it
+  proves nothing about origin; trust the Releases page, not the signature.
+  Swap in your own private key via the `OT_KEYSTORE_B64` /
+  `OT_KEYSTORE_PASSWORD` repo secrets if you prefer a closed signature.
+- App releases are deliberately **not** marked "Latest" in the repo — that
+  badge stays on the firmware releases that `tools/update_opentag.py` and the
+  device's OTA resolve automatically.
+
 ## Permissions
 
 - Android 12+: `BLUETOOTH_SCAN` (neverForLocation) + `BLUETOOTH_CONNECT`,

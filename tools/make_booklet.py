@@ -476,7 +476,10 @@ def page_sync(pdf):
              "the bond in your phone's Bluetooth settings first.")
     pdf.h2("Android app")
     pdf.body("The companion app does the same over BLE: pick .bin dumps or "
-             "a .zip of them, upload, browse, and trigger emulation.")
+             "a .zip of them, upload, browse, and trigger emulation. No "
+             "computer needed to install it - download the newest .apk "
+             "from the project's GitHub releases (the app-v entries) and "
+             "open it on your phone.")
     pdf.h2("USB drive (read-only)")
     pdf.bullets([
         "Pick USB drive and plug the DevKit's own USB-C port into any "

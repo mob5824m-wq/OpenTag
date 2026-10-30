@@ -25,7 +25,9 @@ guide, and parts list.
 - **Android app** ([`android-app/`](android-app/)) — native Kotlin app
   (no dependencies) for BLE file dumping: pick `.bin` dumps or a `.zip` of
   them, upload to the device, browse the on-device library, and trigger
-  emulation.
+  emulation. Every merge to `main` auto-builds a fresh signed `.apk`
+  (`app-v*` releases on the Releases page) — download and sideload it, no
+  Android Studio needed.
 - **Wireless charging (optional)** — a Qi receiver coil inside the back
   plate charges the OpenTag from any Qi pad through the existing TP4056
   (an engraved ring on the back marks the spot); with the optional charge

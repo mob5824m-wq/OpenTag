@@ -1,0 +1,131 @@
+# Builds the companion Android app. On every merge to main it publishes a
+# new versioned release with the signed .APK attached; on pull requests that
+# touch the app it only builds (a cheap compile gate).
+#
+# Release naming: app-v<semver> tags, patch-bumped per release. They are
+# created with --latest=false on purpose — the firmware v* releases keep the
+# repo's "Latest" badge, because both tools/update_opentag.py and the
+# on-device OTA resolve releases/latest (and neither picks up .apk assets,
+# so they would merely miss the firmware they are looking for).
+#
+# Signing: the committed open key in android-app/keys/ by default, or the
+# OT_KEYSTORE_B64 / OT_KEYSTORE_PASSWORD repo secrets when set — see
+# android-app/keys/README.md.
+name: android-app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/android-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-app-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history + tags: version bumping needs them
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7' # matches gradle/wrapper/gradle-wrapper.properties
+
+      - name: Ensure Android SDK pieces (compileSdk 34)
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - name: Work out the next version
+        id: ver
+        run: |
+          LAST=$(git tag --list 'app-v*' --sort=-v:refname | head -n 1)
+          if [ -n "$LAST" ]; then
+            base=${LAST#app-v}
+            major=${base%%.*}; rest=${base#*.}
+            minor=${rest%%.*}; patch=${rest#*.}
+            patch=$((patch + 1))
+          else
+            major=1; minor=0; patch=0
+          fi
+          VER="$major.$minor.$patch"
+          {
+            echo "tag=app-v$VER"
+            echo "version=$VER"
+            echo "code=$GITHUB_RUN_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+          echo "next app release: $VER (versionCode $GITHUB_RUN_NUMBER)"
+
+      - name: Signing key (secret overrides the committed open key)
+        run: |
+          if [ -n "${{ secrets.OT_KEYSTORE_B64 }}" ]; then
+            printf '%s' "${{ secrets.OT_KEYSTORE_B64 }}" \
+              | base64 -d > "$RUNNER_TEMP/ot-release.p12"
+            {
+              echo "OT_KEYSTORE_FILE=$RUNNER_TEMP/ot-release.p12"
+              echo "OT_STORE_PASSWORD=${{ secrets.OT_KEYSTORE_PASSWORD }}"
+              echo "OT_KEY_PASSWORD=${{ secrets.OT_KEYSTORE_PASSWORD }}"
+              echo "OT_KEY_ALIAS=opentag"
+            } >> "$GITHUB_ENV"
+            echo "using private signing key from repo secrets"
+          else
+            echo "using the committed open signing key (android-app/keys/)"
+          fi
+
+      - name: Build the release APK
+        run: |
+          cd android-app
+          gradle --no-daemon --stacktrace assembleRelease \
+            -PappVersionName="${{ steps.ver.outputs.version }}" \
+            -PappVersionCode="${{ steps.ver.outputs.code }}"
+
+      - name: Collect the APK + checksum
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          cp android-app/app/build/outputs/apk/release/app-release.apk \
+             "opentag-android-$VER.apk"
+          sha256sum "opentag-android-$VER.apk" > "opentag-android-$VER.apk.sha256"
+          ls -l opentag-android-*
+
+      - name: Publish the release (merges to main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          VER="${{ steps.ver.outputs.version }}"
+          SHA="${GITHUB_SHA::7}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          NOTES="Companion Android app for the OpenTag handheld, built
+          automatically from main ($SHA).
+
+          Install: download the .apk below, open it on your phone and allow
+          installs from that source. It upgrades in place over previous
+          app releases (stable signing key - see android-app/keys/README.md
+          in the repository).
+
+          The .sha256 file lists the APK's checksum."
+          gh release create "$TAG" \
+            "opentag-android-$VER.apk" "opentag-android-$VER.apk.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "OpenTag Android app $VER" \
+            --latest=false \
+            --notes "$NOTES"
