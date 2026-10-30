@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write      # failure reports comment on the PR
 
 concurrency:
   group: android-app-${{ github.ref }}
@@ -91,10 +92,39 @@ jobs:
 
       - name: Build the release APK
         run: |
+          set -o pipefail
           cd android-app
           gradle --no-daemon --stacktrace assembleRelease \
             -PappVersionName="${{ steps.ver.outputs.version }}" \
-            -PappVersionCode="${{ steps.ver.outputs.code }}"
+            -PappVersionCode="${{ steps.ver.outputs.code }}" 2>&1 | tee ../build.log
+
+      # The sandbox-free way to debug: gradle's own error lines become
+      # check-run annotations (readable via the API) and the log tail lands
+      # in the job summary; on PRs it also comments on the PR.
+      - name: Surface the build error
+        if: failure()
+        run: |
+          {
+            echo '## Build log (last 80 lines)'
+            echo '```'
+            tail -n 80 build.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^e: |error: |FAILURE|What went wrong|Execution failed|Could not' \
+            build.log 2>/dev/null | head -n 8 | cut -c1-230 | while IFS= read -r line; do
+              echo "::error::${line//'%'/%25}"
+            done
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" \
+              --body "The android-app CI build failed. Last 40 lines:
+          \`\`\`
+          $(tail -n 40 build.log | sed 's/`/\`/g' || true)
+          \`\`\`
+          Full log: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              || true
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Collect the APK + checksum
         run: |
