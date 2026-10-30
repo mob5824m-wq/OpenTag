@@ -61,6 +61,27 @@ The amiibo ID *inside* a retail dump is AES-encrypted, which is why matching
 happens by file name — the same approach collectors' naming conventions
 support.
 
+## OpenTag Mini
+
+The app also drives the **OpenTag Mini**, the screenless variant — and
+tells the two apart for you. On connect the app sends `INFO` and reads the
+reply (`OK:info:standard|mini:<battery mV>:<charging>`):
+
+- the connection card's subtitle shows **OpenTag Mini · screenless · no
+  pairing PIN** (the handheld shows **OpenTag · OLED handheld**), then
+  settles to the model plus live **battery % / charging** readout — on the
+  Mini this line is the only "screen" the device has;
+- the Mini pairs with **no PIN** (just-works) — there's no numeric
+  comparison to confirm, which is what makes the screenless design work;
+- the remote action set covers everything the handheld's on-device menu
+  does: per-amiibo **Emulate / Write to NTAG215 / Toggle random UID /
+  Delete**, plus the tag tools **Backup tag** and **Inspect tag**, and
+  **Write / Emulate NDEF note** — on the Mini these replace the menu
+  entirely; on the handheld they're the same commands its menu runs, now
+  available remotely;
+- everything else (uploads, keys, Wi-Fi/OTA, USB drive, stop) is
+  identical, over the same BLE protocol — one app, both devices.
+
 ## Build
 
 1. Open Android Studio → **File ▸ Open** → select this `android-app/`

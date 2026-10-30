@@ -73,6 +73,10 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         findViewById<Button>(R.id.uploadAll).setOnClickListener { uploadAll() }
         findViewById<Button>(R.id.refresh).setOnClickListener { ble.refreshLibrary() }
         findViewById<Button>(R.id.stopEmu).setOnClickListener { ble.sendCommand("STOP") }
+        findViewById<Button>(R.id.writeNote).setOnClickListener { ble.sendCommand("NOTE:WRITE") }
+        findViewById<Button>(R.id.emuNote).setOnClickListener { ble.sendCommand("NOTE:EMU") }
+        findViewById<Button>(R.id.backupTag).setOnClickListener { ble.sendCommand("AMI:BACKUP") }
+        findViewById<Button>(R.id.inspectTag).setOnClickListener { ble.sendCommand("TAG:INSPECT") }
 
         findViewById<TextView>(R.id.log).movementMethod = ScrollingMovementMethod()
         findViewById<ListView>(R.id.localList).setEmptyView(findViewById(R.id.localEmpty))
@@ -372,13 +376,16 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         val name = deviceLib[position]
         val meta = db?.matchFilename(name)
         val title = meta?.let { "${it.name} (${it.series})" } ?: name
-        val options = arrayOf("Emulate on OpenTag", "Delete from device")
+        val options = arrayOf("Emulate on OpenTag", "Write to NTAG215 (needs keys)",
+                               "Toggle random UID", "Delete from device")
         AlertDialog.Builder(this)
             .setTitle(title)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> ble.sendCommand("AMI:EMU:$name")
-                    1 -> ble.sendCommand("AMI:DEL:$name")
+                    1 -> ble.sendCommand("AMI:WRITE:$name")
+                    2 -> ble.sendCommand("AMI:RAND:$name")
+                    3 -> ble.sendCommand("AMI:DEL:$name")
                 }
             }
             .show()
@@ -394,9 +401,17 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             if (connected) "Connected" else "Not connected"
         findViewById<View>(R.id.stateDot).setBackgroundResource(
             if (connected) R.drawable.dot_ok else R.drawable.dot)
+        val info = findViewById<TextView>(R.id.deviceInfo)
         if (connected) {
+            // differentiate the two device types: the screenless Mini has
+            // no OLED and pairs without a PIN
+            info.text = if (ble.isMini) "OpenTag Mini · screenless · no pairing PIN"
+                        else "OpenTag · OLED handheld"
+            ble.sendCommand("INFO")   // model + battery + charge state
             ble.refreshLibrary()
             ble.sendCommand("KEY:STATUS")
+        } else {
+            info.text = "Bluetooth LE · works with OpenTag and OpenTag Mini"
         }
     }
 
@@ -416,6 +431,24 @@ class MainActivity : Activity(), BleOpenTag.Listener {
 
     override fun onStatus(line: String) {
         when {
+            line.startsWith("OK:info:") -> {
+                // "OK:info:<standard|mini>:<millivolts>:<charging 0/1>"
+                val parts = line.split(":")
+                if (parts.size >= 5) {
+                    val model = if (parts[2] == "mini" || ble.isMini) "OpenTag Mini · screenless"
+                                else "OpenTag · OLED handheld"
+                    val mv = parts[3].toIntOrNull() ?: 0
+                    var text = model
+                    if (mv > 0) {
+                        val pct = ((mv / 1000.0f - 3.30f) / 0.80f * 100).toInt().coerceIn(0, 100)
+                        text += " · battery $pct%"
+                    }
+                    if (parts[4] == "1") text += " · charging"
+                    findViewById<TextView>(R.id.deviceInfo).text = text
+                }
+            }
+            line.startsWith("OK:backup:") ->
+                ble.refreshLibrary()   // the dumped entry just landed
             line.startsWith("OK:keys:") ->
                 findViewById<TextView>(R.id.keyState).text =
                     if (line.contains("ready"))
@@ -444,7 +477,9 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     private fun updateButtons() {
         val on = ble.connected
         for (id in intArrayOf(R.id.disconnect, R.id.sendNote, R.id.clearNote,
+                               R.id.writeNote, R.id.emuNote,
                                R.id.uploadAll, R.id.refresh, R.id.stopEmu,
+                               R.id.backupTag, R.id.inspectTag,
                                R.id.uploadKeys, R.id.keyStatusBtn, R.id.forgetKeys,
                                R.id.wifiSave, R.id.otaCheck, R.id.otaStart))
             findViewById<Button>(id).isEnabled = on

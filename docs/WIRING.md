@@ -169,3 +169,71 @@ GPIO5 (J1-5) ── piezo(+) ── piezo(−) ── GND
    from the battery.
 4. On boot the OLED shows OPENTAG; the menu reports the PN532Killer state
    (`PN532Killer absent` if UART probing failed — check TX/RX swap first).
+
+## OpenTag Mini variant
+
+The Mini ([`../hardware/cad/opentag_mini_shell.cad`](../hardware/cad/opentag_mini_shell.cad),
+firmware `device/src/mini/main.cpp`, env `opentag_mini`) is the screenless
+variant: **no carrier PCB, no OLED, no nav buttons, no pairing PIN.** The
+power chain is identical to the handheld's (same TP4056 → switch → MT3608 →
+Schottky → 5 V), just wired point-to-point with short jumper leads instead
+of PCB tracks. The DevKit's own USB-C faces the **west** wall slot; the
+TP4056's USB-C + charge LEDs sit in the **east** wall slot, with the
+light-pipe bore beside it.
+
+### Point-to-point wiring
+
+| Connection | DevKit pin (GPIO) | Module side |
+| --- | --- | --- |
+| Killer 3V3 / GND (J4) | J1-2 (3V3) / any GND | VCC / GND |
+| Killer RX / TX (J4) | J1-10 TX (17) / J1-11 RX (18) | crossed: TX → RX |
+| OK button | J3-4 (GPIO1) | one leg; other leg to GND |
+| Charge sense (optional) | J3-18 (GPIO21) | TP4056 /CHRG via 22 kΩ |
+| Battery divider (optional) | J1-4 (GPIO4) | B+ ─ 100k ─┬─ 100k ─ GND |
+| Piezo (optional) | J1-5 (GPIO5) | buzzer + , − to GND |
+| +5 V | J1-21 | MT3608 OUT+ via 1N5819 |
+| GND | J1-22 / J3-1 | MT3608 OUT− , TP4056 OUT− |
+
+```
+LiPo ── TP4056 B+/B− (USB-C charge jack in the EAST wall slot)
+   TP4056 OUT+ ── slide switch (EAST wall slot) ── MT3608 IN+
+   MT3608 OUT+ ── 1N5819 → DevKitC 5V; DevKitC 3V3 → Killer VCC
+```
+
+Everything else on the DevKitC stays unwired: no OLED bus (GPIO 8–12), no
+UP/DOWN/BACK buttons (GPIO 42/2/13). GPIO1 is an RTC pin — the OK button
+doubles as the deep-sleep wake source.
+
+### Assembly (no soldering except module pads)
+
+1. Tin the four power pads of the TP4056 and MT3608 and the switch lugs;
+   pre-fit their jumpers, and set the MT3608 to 5.0–5.1 V **before** it
+   goes in the shell.
+2. Drop the modules into their printed trays on the back plate — TP4056 in
+   the north-east tray (its USB-C jack in the east-wall slot, LEDs toward
+   the light-pipe bore), MT3608 beside it — and zip-tie each one through
+   the tray's tie bars.
+3. Seat the DevKitC in its tray (USB-C facing west, visible through the
+   west slot and the 24 × 24 mm service window above it) and connect the
+   four Killer Dupont jumpers; lay the Killer antenna-down in its bay, west
+   side, under the open tap window.
+4. Stick the tactile switch to the printed pedestal (foam tape, legs bent
+   flat, plunger up) south of the battery rails; wire it to GPIO1 + GND.
+5. Stick the 2 mm foam pad (~40 × 30 mm) to the **underside** of the
+   cell, lay the cell pad-down on top of the DevKitC (cell y-extent
+   −32..+8 mm, between the end stops), and close the halves: the front
+   shell's ceiling rails squeeze the foam ~0.3 mm for a rattle-free
+   sandwich. Four M3 screws in the corner bosses.
+
+### Bring-up
+
+1. Flash over the DevKit's west USB-C: `pio run -e opentag_mini -t upload`
+   (+ `-t uploadfs` once for the LittleFS library).
+2. First sign of life is BLE — the device advertises as **OpenTag Mini**
+   with no PIN prompt; connect from the app or web page and the device
+   badge confirms the model. If the Killer is absent, the first NFC action
+   reports `ERR:` over BLE instead of on a screen — check the TX/RX swap
+   first.
+3. Everything else (battery %, low-battery auto-off, travel mode, USB
+   drive, Wi-Fi OTA) behaves exactly as the handheld does; see
+   [`BOM.md`](BOM.md#opentag-mini-delta) for the parts delta.

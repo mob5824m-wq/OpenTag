@@ -506,6 +506,49 @@ def page_sync(pdf):
              "reboots, everything intact. BACK cancels mid-download.")
 
 
+def page_mini(pdf):
+    pdf.sheet("The OpenTag Mini")
+    # "MINI" in the device's own .cad pixel font (art parsed from the shell)
+    y0 = pdf.get_y() + 1
+    x = pdf.l_margin
+    for ch in "MINI":
+        cols = BRAND_FONT.get(ch)
+        if cols:
+            pdf.pixels(cols, x, y0, 1.6, r=8)
+        x += 6 * 1.6
+    pdf.set_y(y0 + 7 * 1.6 + 3)
+    pdf.body("The Mini is the screenless sibling of this handheld: the same "
+             "board, NFC, charger and battery in a flatter two-part shell "
+             "with no OLED and no navigation buttons. The Android app or the "
+             "web sync page is its screen — on connect it reports its model, "
+             "battery and charge state in the connection card, and every "
+             "action this booklet covers (library, backup, inspect, note "
+             "write and emulate, USB drive, updates) is a button there. It "
+             "pairs with no PIN at all.")
+    pdf.h2("The one button")
+    pdf.table(
+        ["Input", "What it does"],
+        [["Short press", "Chirps the battery level: one chirp per 20 %, "
+                         "a long low tone when critical (two flat chirps "
+                         "if no gauge is fitted)"],
+         ["Triple press", "Toggles travel mode — BLE advertising off, "
+                          "everything else keeps working"],
+         ["Hold 1.5 s", "Power off (deep sleep). A short press wakes it"],
+         ["Any press", "Cancels an armed write, backup or inspect"],
+         ["Short in USB mode", "Ejects the read-only USB drive"]],
+        [30, 90])
+    pdf.h2("Charging & ports")
+    pdf.bullets([
+        "West wall: the DevKit's own USB-C — flashing, serial console, the "
+        "read-only USB drive.",
+        "East wall: the TP4056's USB-C charge slot with the light pipe "
+        "beside it — charge there, same as the handheld.",
+        "No wireless charging on the Mini: a Qi coil would cover the tap "
+        "window."])
+    pdf.tip("No pairing PIN: the first connection is just-works. If the "
+            "phone asks to bond, accept — there is no code to compare.")
+
+
 def page_help(pdf):
     pdf.sheet("Troubleshooting")
     pdf.table(
@@ -614,6 +657,7 @@ def main():
     page_write(pdf)
     page_ndef(pdf)
     page_sync(pdf)
+    page_mini(pdf)
     page_help(pdf)
     page_inside(pdf)
     page_care(pdf)

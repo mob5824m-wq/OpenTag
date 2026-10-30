@@ -25,15 +25,10 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <TextView
+            <View
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:background="@drawable/mark"
-                android:gravity="center"
-                android:text="N"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:textColor="@color/mint_dark"/>
+                android:background="@drawable/mark"/>
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -76,7 +71,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Send a text note or web URL to your OpenTag over Bluetooth LE, upload your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — and browse the full amiibo database with box art below, no connection needed."
+            android:text="Send a text note or web URL to your OpenTag over Bluetooth LE, upload your own NTAG215 amiibo backups to the on-device library, emulate any of them from the device\u2019s menu or right here in the app — and browse the full amiibo database with box art below, no connection needed."
             android:textSize="14sp"
             android:lineSpacingMultiplier="1.45"
             android:textColor="@color/muted"/>
@@ -111,9 +106,10 @@
                         android:textColor="@color/text"/>
 
                     <TextView
+                        android:id="@+id/deviceInfo"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bluetooth LE · pairs with the OpenTag device"
+                        android:text="Bluetooth LE · works with OpenTag and OpenTag Mini"
                         android:textSize="12sp"
                         android:layout_marginTop="2dp"
                         android:textColor="@color/muted"/>
@@ -195,7 +191,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="12dp"
-                    android:text="Power the device on (it advertises as OpenTag), then tap Connect over BLE. Android asks for Bluetooth permissions on first use — they are required for scanning. Everything the device answers appears in the log below."
+                    android:text="Power the device on (the handheld advertises as OpenTag, the screenless compact build as OpenTag Mini — the Mini pairs without a PIN), then tap Connect over BLE. Android asks for Bluetooth permissions on first use — they are required for scanning. Everything the device answers appears in the log below."
                     android:textSize="12sp"
                     android:lineSpacingMultiplier="1.4"
                     android:textColor="@color/muted"/>
@@ -331,6 +327,63 @@
                     android:paddingEnd="16dp"
                     android:enabled="false"/>
             </LinearLayout>
+
+            <!-- write / emulate the note on a real or virtual tag — the
+                 screenless OpenTag Mini has no menu for these, so they live
+                 here; on the handheld they mirror its NDEF menu items -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/writeNote"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Write to NTAG215"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/emuNote"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Emulate note"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Write to NTAG215 arms the device — tap a blank tag on its antenna and the note is written and read-back verified. Emulate note presents it as a virtual tag instead."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
 
             <TextView
                 android:layout_width="match_parent"
@@ -501,6 +554,63 @@
                     android:enabled="false"/>
             </LinearLayout>
 
+            <!-- reader-mode tools: back up an own tag into the library and
+                 identify any tag — on the handheld these are menu items; on
+                 the screenless OpenTag Mini this is the only way to them -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/backupTag"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Back up a tag"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/inspectTag"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Inspect a tag"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Back up arms the reader: tap your own amiibo on the device antenna and it is saved to the library under its UID. Inspect identifies any tag — the UID, chip type and any NDEF text appear in the log."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="222dp"
@@ -524,7 +634,7 @@
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:gravity="center"
-                    android:text="Device library is empty — sync some dumps, then browse them in the Amiibo library menu on the OLED."
+                    android:text="Device library is empty — sync some dumps, then browse them in the Amiibo library menu (or right here on the Mini)."
                     android:textSize="12sp"
                     android:lineSpacingMultiplier="1.4"
                     android:textColor="@color/muted"/>
@@ -917,7 +1027,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="Updating needs battery or a charger connected — a power loss during flashing falls back to the previous app on the next boot, but finishing an update is nicer. Progress shows on the OLED; BACK on the device cancels."
+                android:text="Updating needs battery or a charger connected — a power loss during flashing falls back to the previous app on the next boot, but finishing an update is nicer. Progress streams into the sync log; the device\u2019s button cancels (BACK, or OK on the Mini)."
                 android:textSize="12sp"
                 android:lineSpacingMultiplier="1.4"
                 android:textColor="@color/warn"/>

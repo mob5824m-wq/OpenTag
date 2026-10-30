@@ -22,12 +22,15 @@ import java.util.ArrayDeque
 import java.util.UUID
 
 /**
- * BLE client for the OpenTag device. Speaks the same protocol as the web
- * sync page:
+ * BLE client for OpenTag devices. Works with both the OLED handheld and the
+ * screenless OpenTag Mini (same service, same command set; the Mini pairs
+ * just-works with no PIN). Speaks the same protocol as the web sync page:
  *
  *   control  0002  "AMI:PUT:<name>:<size>" / "AMI:LIST" / "AMI:DEL:<name>" /
- *                   "AMI:EMU:<name>" / "AMI:ABORT" / "STOP" / "STAT" /
- *                   "TEXT:<note>" / "URL:<note>" / "KEY:STATUS"
+ *                   "AMI:EMU:<name>" / "AMI:WRITE:<name>" / "AMI:BACKUP" /
+ *                   "AMI:RAND:<name>" / "AMI:ABORT" / "STOP" / "STAT" /
+ *                   "INFO" / "TEXT:<note>" / "URL:<note>" / "NOTE:WRITE" /
+ *                   "NOTE:EMU" / "TAG:INSPECT" / "KEY:STATUS"
  *   status   0003  notifications, one status line each
  *   data     0004  [seq_hi][seq_lo][len][payload] chunks of one transfer
  */
@@ -57,6 +60,11 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
     private var ctrlChar: BluetoothGattCharacteristic? = null
     private var dataChar: BluetoothGattCharacteristic? = null
     private var scanning = false
+    private var deviceName: String? = null
+
+    /** True when the scanned/connected device is the screenless OpenTag Mini
+     *  (advertised as "OpenTag Mini"); the UI badges the two types apart. */
+    val isMini: Boolean get() = deviceName?.contains("mini", ignoreCase = true) == true
 
     private val ctrlQueue = ArrayDeque<String>()
     private var ctrlBusy = false
@@ -110,7 +118,9 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             stopScan()
-            log("Found OpenTag, connecting…")
+            deviceName = try { result.device.name } catch (e: SecurityException) { null }
+            log(if (isMini) "Found OpenTag Mini (screenless), connecting…"
+                else "Found OpenTag, connecting…")
             result.device.connectGatt(ctx, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         }
 
@@ -169,6 +179,7 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
                     log("Connected")
                     main.post { listener.onState(true) }
                     sendCommand("STAT")
+                    sendCommand("INFO")
                 } else {
                     close(); log("Could not enable notifications")
                 }

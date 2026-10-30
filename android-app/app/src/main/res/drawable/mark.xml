@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Brand mark: mint rounded square, dark "N" (web .mark). -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/mint"/>
-    <corners android:radius="14dp"/>
-</shape>
+<!-- Brand mark: the OpenTag ring + tag dot on a panel tile, matching the web
+     sync page header and the launcher icon (tools/build_icon.py geometry). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- panel tile, 14 dp corner radius at 40 dp -->
+    <path
+        android:fillColor="@color/panel"
+        android:pathData="M37.8,0 L70.2,0 A37.8,37.8 0 0 1 108,37.8 L108,70.2 A37.8,37.8 0 0 1 70.2,108 L37.8,108 A37.8,37.8 0 0 1 0,70.2 L0,37.8 A37.8,37.8 0 0 1 37.8,0 Z"/>
+    <!-- the mark, 27 dp of the 40 dp tile, centred -->
+    <group
+        android:scaleX="0.675"
+        android:scaleY="0.675"
+        android:translateX="17.55"
+        android:translateY="17.55">
+        <path
+            android:fillColor="@color/mint"
+            android:pathData="M69.94,49.33A23.50,23.50 0 1 1 59.67,39.06L53.81,50.56A10.60,10.60 0 1 0 58.44,55.19Z"/>
+        <path
+            android:fillColor="@color/violet"
+            android:pathData="M59.42,43.38a6.20,6.20 0 1 0 12.40,0a6.20,6.20 0 1 0 -12.40,0Z"/>
+    </group>
+</vector>

@@ -144,16 +144,17 @@ for i, ln in enumerate(["Your tags,", "ready to tap."]):
     d.text((PAD, y + i * 74), ln, font=font(66, bold=True), fill=TEXT)
 y += 170
 y = para(PAD, y, "Send a text note or web URL to your OpenTag over Bluetooth LE, upload your own "
-                 "NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED "
-                 "menu — and browse the full amiibo database with box art below, no connection needed.",
+                 "NTAG215 amiibo backups to the on-device library, emulate any of them from the "
+                 "device’s menu or right here in the app — and browse the full amiibo database with "
+                 "box art below, no connection needed.",
          font(26), MUTED, CW, 12) + 26
 
 # ---------- card 1: device connection ----------
 cy = y + 8
-gradient_card(cy, 700)
+gradient_card(cy, 780)
 iy = cy + 40
 d.text((PAD + 40, iy), "Device connection", font=font(30, bold=True), fill=TEXT)
-d.text((PAD + 40, iy + 44), "Bluetooth LE · pairs with the OpenTag device", font=font(24), fill=MUTED)
+d.text((PAD + 40, iy + 44), "OpenTag · OLED handheld · battery 85%", font=font(24), fill=MUTED)
 d.ellipse([PAD + CW - 210, iy + 8, PAD + CW - 210 + 42, iy + 8 + 42], fill="#46b6f36a")
 d.ellipse([PAD + CW - 210 + 10, iy + 18, PAD + CW - 210 + 32, iy + 40], fill=MINT)
 d.text((PAD + CW - 150, iy + 16), "Connected", font=font(26), fill=MUTED)
@@ -161,44 +162,58 @@ iy += 92
 button(PAD + 40, iy, 460, "Connect over BLE", primary=True, enabled=False)
 button(PAD + 40 + 480, iy, CW - 80 - 480, "Disconnect", primary=False, enabled=True)
 iy += 84 + 28
-d.rectangle([PAD + 40, iy, PAD + 46, iy + 150], fill=VIOLET)
-iy = para(PAD + 58, iy - 4, "Power the device on (it advertises as OpenTag), then tap Connect over BLE. "
+d.rectangle([PAD + 40, iy, PAD + 46, iy + 170], fill=VIOLET)
+iy = para(PAD + 58, iy - 4, "Power the device on (the handheld advertises as OpenTag, the screenless "
+          "compact build as OpenTag Mini — the Mini pairs without a PIN), then tap Connect over BLE. "
           "Android asks for Bluetooth permissions on first use — they are required for scanning. "
           "Everything the device answers appears in the log below.", font(24), MUTED, CW - 100, 12) + 16
-rrect([PAD + 40, iy, PAD + CW - 40, iy + 300], 26, fill=LOG_BG, outline=LOG_LN)
+rrect([PAD + 40, iy, PAD + CW - 40, iy + 344], 26, fill=LOG_BG, outline=LOG_LN)
 ly = iy + 20
 for ln, c in [("Scanning for OpenTag…", MUTED), ("Found OpenTag, connecting…", MUTED),
-              ("OK:connected  MTU 247", LOG_TX), ("AMI:LIST", LOG_TX), ("AMI:0 mario-smash", LOG_TX),
+              ("OK:connected  MTU 247", LOG_TX), ("INFO", LOG_TX),
+              ("OK:info:standard:3985:0", MINT), ("AMI:LIST", LOG_TX),
+              ("AMI:0 mario-smash", LOG_TX),
               ("AMI:1 0000000000340102", LOG_TX), ("OK:ami-list 2 entries", MINT),
               ("KEY:STATUS", LOG_TX), ("OK:keys:ready", LOG_TX)]:
     d.text((PAD + 66, ly), ln, font=font(24, mono=True), fill=c); ly += 38
-y = cy + 700 + 32
+y = cy + 780 + 32
 
 # ---------- card 2: NDEF note ----------
-gradient_card(y, 640)
+gradient_card(y, 980)
 iy = y + 40
 d.text((PAD + 40, iy), "NDEF note", font=font(30, bold=True), fill=TEXT)
 d.text((PAD + 40 + d.textlength("NDEF note", font=font(30, bold=True)) + 12, iy + 7),
        "— a short text or link the tag carries", font=font(24), fill=MUTED)
 iy = para(PAD + 40, iy + 48, "An NDEF note is the standard “message” stored on NFC tags: up to 200 bytes "
           "of plain text or an http(s) link. Send it to the device, and the device menu’s Write / Emulate / "
-          "Clear NDEF note items act on it.", font(24), MUTED, CW - 80, 12) + 22
+          "Clear NDEF note items act on it — a blank NTAG215 can then carry it, or the device can emulate "
+          "it as a virtual tag.", font(24), MUTED, CW - 80, 12) + 22
 d.text((PAD + 40, iy), "Content", font=font(24, bold=True), fill=MUTED); iy += 38
 rrect([PAD + 40, iy, PAD + CW - 40, iy + 82], 24, fill=INPUT_BG, outline=MINT)
 d.text((PAD + 64, iy + 40), "https://opentag.example", font=font(26), fill=TEXT, anchor="lm")
 iy += 82 + 24
 button(PAD + 40, iy, 400, "Send note now")
 button(PAD + 40 + 416, iy, CW - 80 - 416, "Clear device note", primary=False, enabled=True)
-y = y + 640 + 32
+iy += 84 + 14
+button(PAD + 40, iy, 400, "Write to NTAG215", primary=False, enabled=True)
+button(PAD + 40 + 416, iy, CW - 80 - 416, "Emulate note", primary=False, enabled=True)
+iy += 84 + 22
+iy = para(PAD + 40, iy, "Write to NTAG215 arms the device — tap a blank tag on its antenna and the note "
+          "is written and read-back verified. Emulate note presents it as a virtual tag instead.",
+          font(24), MUTED, CW - 80, 12) + 14
+iy = para(PAD + 40, iy, "Text starting with http:// or https:// is sent as a URL record, everything else "
+          "as plain text. The note survives reboots.", font(24), MUTED, CW - 80, 12) + 16
+y = y + 980 + 32
 
 # ---------- card 3: amiibo library ----------
-gradient_card(y, 1060)
+gradient_card(y, 1330)
 iy = y + 40
 d.text((PAD + 40, iy), "Amiibo library", font=font(30, bold=True), fill=TEXT)
 iy = para(PAD + 40, iy + 46, "Pick a .zip, loose .bin dumps, or Flipper Zero .nfc files from your own "
           "collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized "
-          "on the phone, validated, then copied to the device over BLE. Kirby Air Riders v3 dumps are "
-          "accepted as-is for emulation. Nothing is uploaded to any server.", font(24), MUTED, CW - 80, 12) + 22
+          "on the phone, validated, then copied to the device over BLE. Kirby Air Riders v3 dumps "
+          "(1024-byte NTAG I²C page images) are accepted as-is for emulation. Nothing is uploaded to any "
+          "server.", font(24), MUTED, CW - 80, 12) + 22
 button(PAD + 40, iy, 430, "Choose .zip / .bin / .nfc", primary=True, enabled=True)
 button(PAD + 40 + 446, iy, CW - 80 - 446, "Upload all", primary=False, enabled=True)
 iy += 84 + 26
@@ -209,10 +224,16 @@ d.rectangle([PAD + 40, iy, PAD + CW - 40, iy + 2], fill=CARD_LN); iy += 34
 d.text((PAD + 40, iy), "On device", font=font(26, bold=True), fill=TEXT); iy += 44
 button(PAD + 40, iy, 380, "Refresh list", primary=False, enabled=True)
 button(PAD + 40 + 396, iy, CW - 80 - 396, "Stop emulation", primary=False, enabled=True)
-iy += 84 + 26
+iy += 84 + 14
+button(PAD + 40, iy, 380, "Back up a tag", primary=False, enabled=True)
+button(PAD + 40 + 396, iy, CW - 80 - 396, "Inspect a tag", primary=False, enabled=True)
+iy += 84 + 22
+iy = para(PAD + 40, iy, "Back up arms the reader: tap your own amiibo on the device antenna and it is "
+          "saved to the library under its UID. Inspect identifies any tag — the UID, chip type and any "
+          "NDEF text appear in the log.", font(24), MUTED, CW - 80, 12) + 18
 iy = row(iy, "mario-smash.bin", "Mario · Super Smash Bros. · Figure · 2014", None, "violet", "BIN", "#c0504d", "M")
 iy = row(iy, "0000000000340102.bin", "Mario · Super Smash Bros. · Figure · 2014", None, "violet", "BIN", "#c0504d", "M")
-y = y + 1060 + 32
+y = y + 1330 + 32
 
 # ---------- card 4: amiibo database ----------
 gradient_card(y, 690)
@@ -242,8 +263,9 @@ d.text((PAD + 40 + d.textlength("Amiibo signing keys", font=font(30, bold=True))
        "(advanced)", font=font(24), fill=MUTED)
 iy = para(PAD + 40, iy + 48, "OpenTag emulates amiibo — no physical tag writing needed. These keys are only "
           "for the optional advanced flow that survives on the device (long-press in its library writes to a "
-          "real NTAG215, TagMo-style, using your unfixed-info.bin and locked-secret.bin). Files are "
-          "identified by their embedded type string and stored in the device’s NVS.", font(24), MUTED, CW - 80, 12) + 22
+          "real NTAG215, TagMo-style, using your unfixed-info.bin and locked-secret.bin). A combined "
+          "160-byte retail key file also works. Files are identified by their embedded type string, stored "
+          "in the device’s NVS, and never bundled with this project or sent anywhere else.", font(24), MUTED, CW - 80, 12) + 22
 button(PAD + 40, iy, 430, "Choose key .bin files", primary=True, enabled=True)
 button(PAD + 40 + 446, iy, CW - 80 - 446, "Upload keys", primary=False, enabled=True)
 iy += 84 + 20
@@ -261,7 +283,8 @@ iy = y + 40
 d.text((PAD + 40, iy), "Firmware updates over Wi-Fi", font=font(30, bold=True), fill=TEXT)
 iy = para(PAD + 40, iy + 48, "Save your Wi-Fi credentials once, then update the OpenTag without a computer: "
           "it fetches the newest firmware release from GitHub, flashes only the app partition and reboots — "
-          "your amiibo library, keys and note survive every update. The wired one-command updater "
+          "your amiibo library, keys and note survive every update. Credentials live in the device’s "
+          "settings and are only used for updates. The wired one-command updater "
           "(tools/update_opentag.py) keeps working without any of this.", font(24), MUTED, CW - 80, 12) + 22
 d.text((PAD + 40, iy), "Wi-Fi name (SSID)", font=font(24, bold=True), fill=MUTED); iy += 38
 rrect([PAD + 40, iy, PAD + CW - 40, iy + 82], 24, fill=INPUT_BG, outline="#303a49")
@@ -277,7 +300,8 @@ button(PAD + 40 + bw + 8, iy, bw, "Check status", primary=False, enabled=True)
 button(PAD + 40 + 2 * (bw + 8), iy, bw, "Update now", primary=False, enabled=True)
 iy += 84 + 22
 para(PAD + 40, iy, "Updating needs battery or a charger connected — a power loss during flashing falls back "
-     "to the previous app on the next boot. Progress shows on the OLED; BACK on the device cancels.",
+     "to the previous app on the next boot, but finishing an update is nicer. Progress streams into the "
+     "sync log; the device’s button cancels (BACK, or OK on the Mini).",
      font(24), WARN, CW - 80, 10)
 y = y + 880 + 20
 

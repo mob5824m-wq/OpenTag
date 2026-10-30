@@ -93,6 +93,14 @@ inline size_t strlcpy(char *dst, const char *src, size_t cap) {
 }
 #endif
 
+#ifndef strlcat
+inline size_t strlcat(char *dst, const char *src, size_t cap) {
+  size_t d = strlen(dst);
+  if (d >= cap) return d + strlen(src);
+  return d + strlcpy(dst + d, src, cap - d);
+}
+#endif
+
 typedef int portMUX_TYPE;
 #define portMUX_INITIALIZER_UNLOCKED 0
 inline void portENTER_CRITICAL(portMUX_TYPE *) {}

@@ -183,6 +183,11 @@ static char writeName[Amiibo::kNameLen] = "";
 static uint8_t writeImage[540];     // armed dump, re-signed at tap time
 static bool writeArmed = false;
 static unsigned long lockAskedAt = 0;
+// Remote-armed tap actions (NOTE:WRITE / AMI:BACKUP / TAG:INSPECT over BLE):
+// true while an action armed from the phone is waiting for a tag, so STOP
+// can cancel it without kicking a user out of a menu-entered screen.
+static bool remoteArmed = false;
+static bool remoteNoteWrite = false;
 
 // ---- emulation state ----
 enum EmuMode : uint8_t { EMU_NONE = 0, EMU_NOTE = 1, EMU_AMIIBO = 2 };
@@ -774,6 +779,20 @@ static void inspectTag(const uint8_t *uid, uint8_t uidLen) {
   inspValid = true;
   chirp(1800, 50);
   uiMessage = "";
+  // Remote counterpart: the app/web "Inspect tag" button gets the same
+  // identity line the screen shows, so no display is needed to read it.
+  {
+    char uid[24] = "";
+    for (uint8_t i = 0; i < inspUidLen; ++i) {
+      char b[4];
+      snprintf(b, sizeof(b), "%s%02X", i ? ":" : "", inspUid[i]);
+      strlcat(uid, b, sizeof(uid));
+    }
+    char line[128];
+    snprintf(line, sizeof(line), "OK:inspect:%s:%s:%s",
+             uid, inspKind, inspNdef[0] ? inspNdef : "-");
+    setStatus(line);
+  }
   drawScreen(true);
 }
 
@@ -1029,18 +1048,26 @@ static void runOtaUpdate() {
   http.end();
 
   char url[192] = "";
+  char fallback[192] = "";
   int pos = 0;
   while ((pos = body.indexOf("browser_download_url", pos)) >= 0) {
     const int q1 = body.indexOf('"', pos + 20);
     const int q2 = body.indexOf('"', q1 + 1);
     if (q1 < 0 || q2 < 0) break;
     const String asset = body.substring(q1 + 1, q2);
+    // Releases carry two firmwares (handheld + mini); each device must
+    // flash its own. Prefer the matching name, remember any .bin as a
+    // fallback so pre-mini releases (single firmware.bin) still work.
     if (asset.endsWith(".bin") && asset.length() < sizeof(url)) {
-      strlcpy(url, asset.c_str(), sizeof(url));
-      break;
+      if (!fallback[0]) strlcpy(fallback, asset.c_str(), sizeof(fallback));
+      if (asset.indexOf("opentag-firmware-") >= 0) {
+        strlcpy(url, asset.c_str(), sizeof(url));
+        break;
+      }
     }
     pos = q2;
   }
+  if (!url[0] && fallback[0]) strlcpy(url, fallback, sizeof(url));
   if (!url[0]) {
     uiState = UI_MENU;
     uiMessage = "No release found";
@@ -1745,6 +1772,22 @@ static bool takeBleCommand(char *out, size_t cap) {
   return true;
 }
 
+// Cancels a phone-armed tap action (note write / backup / inspect). Only
+// touches the UI when one is actually armed, so STOP from the menu never
+// kicks a user out of a screen they entered on the device. Returns whether
+// something was cancelled; the caller sends its own reply line.
+static bool cancelRemoteAction() {
+  if (!remoteArmed && !remoteNoteWrite) return false;
+  remoteArmed = false;
+  remoteNoteWrite = false;
+  if (uiState == UI_WAIT_TAG || uiState == UI_BACKUP || uiState == UI_INSPECT) {
+    uiState = UI_MENU;
+    uiMessage = "Cancelled";
+    drawScreen(true);
+  }
+  return true;
+}
+
 void processBleCommands() {
   char cmd[sizeof(bleCommand)];
   if (!takeBleCommand(cmd, sizeof(cmd))) return;
@@ -1823,6 +1866,71 @@ void processBleCommands() {
     return;
   }
 
+  // Remote counterparts of the "Write / Emulate NDEF note" menu items: arm
+  // the write-on-tap flow (the tag tap itself performs it) or start note
+  // emulation. The screenless OpenTag Mini relies on these.
+  if (strcmp(cmd, "NOTE:WRITE") == 0) {
+    if (!pendingPresent) { setStatus("ERR:no-note"); return; }
+    if (!nfcReady) { setStatus("ERR:nfc-absent"); return; }
+    stopEmulation();
+    remoteArmed = true;
+    remoteNoteWrite = true;
+    waitingForTag = true;
+    tagReady = false;
+    uiState = UI_WAIT_TAG;
+    uiMessage = "Armed from phone";
+    setStatus("OK:write-armed:note");
+    drawScreen(true);
+    return;
+  }
+  if (strcmp(cmd, "NOTE:EMU") == 0) {
+    if (!pendingPresent) { setStatus("ERR:no-note"); return; }
+    if (!startNoteEmulation()) { setStatus("ERR:emulate"); return; }
+    return;   // startEmulation() already reported OK:emulating:…
+  }
+
+  // Device identity for the app / web page: model, battery millivolts
+  // (0 = no divider fitted) and charge state, so the phone can badge the
+  // device type and show a gauge without the OLED.
+  if (strcmp(cmd, "INFO") == 0) {
+    char status[64];
+    snprintf(status, sizeof(status), "OK:info:standard:%u:%u",
+             (unsigned)(battVolts > 0.5f ? battVolts * 1000.0f + 0.5f : 0u),
+             charging ? 1u : 0u);
+    setStatus(status);
+    return;
+  }
+
+  // Remote counterparts of the USB-drive menu item (dock the library as a
+  // read-only USB drive; eject it again from the phone).
+  if (strcmp(cmd, "USB:START") == 0) {
+    if (uiState == UI_USBDRIVE) { setStatus("ERR:usb-mode"); return; }
+    enterUsbDrive();
+    setStatus(uiState == UI_USBDRIVE ? "OK:usb-started" : "ERR:usb-failed");
+    return;
+  }
+  if (strcmp(cmd, "USB:STOP") == 0) {
+    if (uiState != UI_USBDRIVE) { setStatus("ERR:not-usb-mode"); return; }
+    exitUsbDrive();
+    setStatus("OK:usb-stopped");
+    return;
+  }
+
+  // Remote tag identifier: arms the inspector; the tap answer arrives as
+  // OK:inspect:<uid>:<chip>:<ndef> (see inspectTag()).
+  if (strcmp(cmd, "TAG:INSPECT") == 0) {
+    if (!nfcReady) { setStatus("ERR:nfc-absent"); return; }
+    stopEmulation();
+    remoteArmed = true;
+    inspValid = false;
+    inspUidLen = 0;
+    uiState = UI_INSPECT;
+    uiMessage = "";
+    setStatus("OK:inspect-armed");
+    drawScreen(true);
+    return;
+  }
+
   if (strncmp(cmd, "AMI:", 4) == 0) {
     char *rest = cmd + 4;
     if (strncmp(rest, "PUT:", 4) == 0) { handleAmiiboPut(rest + 4); return; }
@@ -1847,7 +1955,47 @@ void processBleCommands() {
         uiMessage = "Write cancelled";
         drawScreen(true);
       }
+      cancelRemoteAction();
       setStatus("OK:ami-abort");
+      return;
+    }
+    // Remote counterpart of the "Backup tag" menu item: arm the dumper; the
+    // tap itself saves the dump and answers OK:backup:<name>.
+    if (strcmp(rest, "BACKUP") == 0) {
+      if (!nfcReady) { setStatus("ERR:nfc-absent"); return; }
+      stopEmulation();
+      remoteArmed = true;
+      uiState = UI_BACKUP;
+      uiMessage = "";
+      setStatus("OK:backup-armed");
+      drawScreen(true);
+      return;
+    }
+    // Remote counterpart of the library's hold-BACK random-UID toggle.
+    if (strncmp(rest, "RAND:", 5) == 0) {
+      char name[Amiibo::kNameLen];
+      if (!sanitizeName(rest + 5, name, sizeof(name))) { setStatus("ERR:ami-name"); return; }
+      char path[64];
+      amiiboPath(name, path, sizeof(path));
+      if (!LittleFS.exists(path)) { setStatus("ERR:not-found"); return; }
+      const bool on = !amiiboRandomFlag(name);
+      setAmiiboRandomFlag(name, on);
+      listAmiibos();
+      for (size_t i = 0; i < amiCount; i++)
+        if (!strcmp(amiNames[i], name)) { amiSelected = i; break; }
+      setStatus(on ? "OK:ami-rand:on" : "OK:ami-rand:off");
+      drawScreen(true);
+      return;
+    }
+    // Remote counterpart of the post-write "Lock this tag?" long-press:
+    // locks the tag that is still on the antenna (irreversible).
+    if (strcmp(rest, "LOCK") == 0) {
+      if (!nfcReady) { setStatus("ERR:nfc-absent"); return; }
+      const bool ok = lockWrittenTag();
+      if (ok && uiState == UI_LOCK_CONFIRM) uiState = UI_MENU;
+      uiMessage = ok ? "Tag locked" : "Lock failed";
+      setStatus(ok ? "OK:locked" : "ERR:lock-failed");
+      drawScreen(true);
       return;
     }
     if (strcmp(rest, "LIST") == 0) {
@@ -1912,6 +2060,7 @@ void processBleCommands() {
       uiMessage = "Write cancelled";
       drawScreen(true);
     }
+    if (cancelRemoteAction()) setStatus("OK:cancelled");
     return;
   }
 
@@ -2320,10 +2469,24 @@ void loop() {
     if (nfc.readPassiveTarget(uid, &uidLen, 60)) {
       uint8_t page16[16] = {0};
       if (nfc.ntagReadPage(3, page16) && page16[0] == 0xE1 && page16[2] == 0x3E) {
-        tagReady = true;
-        uiState = UI_TAG_READY;
-        noteActivity();   // a tag landing is user activity too
-        uiMessage = "";
+        if (remoteNoteWrite) {
+          // Armed from the phone: no OK button to press, so the tap itself
+          // performs the write and the answer goes back over BLE.
+          remoteArmed = false;
+          remoteNoteWrite = false;
+          noteActivity();
+          const bool ok = writeNtag215Ndef(pendingKind, pendingValue);
+          uiState = UI_MENU;
+          uiMessage = ok ? "NDEF verified OK" : "Write/verify failed";
+          if (ok) chirp(2400, 80);
+          setStatus(ok ? "OK:written-and-verified" : "ERR:write-failed-or-not-NTAG215");
+          drawScreen(true);
+        } else {
+          tagReady = true;
+          uiState = UI_TAG_READY;
+          noteActivity();   // a tag landing is user activity too
+          uiMessage = "";
+        }
       } else {
         uiMessage = "Not an NTAG215 NDEF tag";
       }

@@ -17,6 +17,9 @@ Fabrication assets:
 - `../hardware/cad/opentag_shell.cad` — parametric 2-part handheld shell
   (print-ready STLs in `hardware/cad/stl/`; regenerate with OpenSCAD or
   `python3 tools/cad_to_stl.py`)
+- `../hardware/cad/opentag_mini_shell.cad` — parametric 2-part **Mini**
+  shell (screenless variant; regenerate with `python3
+  tools/cad_mini_to_stl.py`)
 - `BOM.md` — parts list and budget
 
 ## Why the PN532Killer (and not the PN532)
@@ -79,6 +82,45 @@ optional Qi receiver coil (⌀ ≤ 40 mm, ferrite-backed) under the battery adds
 pad charging through the same charger — the engraved ring on the back marks
 the spot; a bolt icon shows on screen while charging (22 kΩ sense wire on
 GPIO21, optional).
+
+## OpenTag Mini variant
+
+`hardware/cad/opentag_mini_shell.cad` + `device/src/mini/main.cpp` are the
+screenless variant of the same electronics: **no OLED, no carrier PCB, no
+nav buttons — no Bluetooth pairing PIN.** The DevKitC, PN532Killer, TP4056
+and MT3608 mount directly into printed trays on the back plate, the battery
+is a DevKitC↔rail sandwich, and everything user-facing happens in the
+Android app or web page over the identical BLE protocol. The app/web device
+badge and the `INFO` status line (`OK:info:mini:<mV>:<chg>`) distinguish it
+from the handheld automatically.
+
+- **Shell** — 83.6 × 93.6 × 16.3 mm (handheld: 97.6 × 135.6 × 29.3), two
+  printed parts + one button cap, no desk stand (no reading pose to hold).
+  Regenerate with `python3 tools/cad_mini_to_stl.py` (self-checking, no
+  OpenSCAD needed); STLs in `hardware/cad/stl/opentag_mini_*.stl`.
+- **Interfaces kept** — NFC UART (GPIO17/18), the single OK button
+  (GPIO1), charge sense (GPIO21), battery divider (GPIO4), piezo (GPIO5),
+  USB drive over the DevKit's own port. **Dropped:** the OLED SPI bus
+  (GPIO8/9/10/11/12) and the UP/DOWN/BACK buttons — those pins stay
+  unconnected. GPIO1 is an RTC pin, so the button also wakes the device
+  from deep sleep.
+- **Battery sandwich** — the cell lies on top of the DevKitC (double-sided
+  2 mm closed-cell foam pad, ~40 × 30 mm, on the cell's underside); the
+  front shell's ceiling rails press it down with ~0.3 mm pre-load when the
+  halves close. No ledges, no glue.
+- **Switch & button** — the master slide switch sits in the east-wall slot;
+  the tactile switch is foam-taped to a solid printed pedestal, plunger up,
+  under the cap's pusher rod.
+- **No Qi on the Mini** — a receiver coil would cover the Killer's tap
+  window on this layout; charge over the TP4056's USB-C in the east wall.
+  The light-pipe bore beside that slot still carries the charge LED out.
+- **Feedback without a screen** — the piezo chirp patterns replace the OLED
+  flows (short press = battery level, one chirp per 20 %), and every action
+  confirms over BLE to the app/web page instead.
+
+Assembly and point-to-point wiring for the Mini are in
+[`WIRING.md`](WIRING.md#opentag-mini-variant); parts delta in
+[`BOM.md`](BOM.md#opentag-mini-delta).
 
 ## Bring-up order
 
