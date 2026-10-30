@@ -28,6 +28,12 @@ guide, and parts list.
   emulation. Every merge to `main` auto-builds a fresh signed `.apk`
   (`app-v*` releases on the Releases page) — download and sideload it, no
   Android Studio needed.
+- **OpenTag Mini** — a screenless, pocket-flatter variant of the same
+  electronics: no OLED, no nav buttons, **no Bluetooth pairing PIN**
+  (just-works pairing — it's keyed to your desk, not to a shared bench).
+  Everything is driven from the Android app or the web page, which
+  recognise the device and label it **Mini** with a matching button set;
+  the single button handles battery chirps, travel mode and power.
 - **Wireless charging (optional)** — a Qi receiver coil inside the back
   plate charges the OpenTag from any Qi pad through the existing TP4056
   (an engraved ring on the back marks the spot); with the optional charge
@@ -157,6 +163,38 @@ Updating an assembled device later never touches your library:
 ([details](#updating-the-firmware-keeps-your-amiibos)).
 
 
+### D · OpenTag Mini (screenless)
+
+The same electronics and BLE protocol with the screen and nav buttons
+removed: **one button, a chirp, and the app or web page for everything.**
+No OLED, no carrier PCB — the DevKitC and the three modules mount straight
+into printed trays, and the shell closes at 83.6 × 93.6 × 16.3 mm
+(31 % shorter and 44 % thinner than the handheld, and it skips the numeric
+pairing PIN entirely). The Android app and web page detect it on connect
+(`INFO` → `mini`) and swap in the Mini control set — emulate, backup,
+inspect, write note — same library, same keys, same Wi-Fi/OTA.
+
+1. **Print the Mini shell** —
+   [`hardware/cad/stl/opentag_mini_*.stl`](hardware/cad/stl/): front
+   shell, back plate, **1** button cap (no desk stand — the Mini has no
+   reading pose to hold).
+2. **Assemble point-to-point** per
+   [`docs/WIRING.md`](docs/WIRING.md#opentag-mini-variant) — no PCB, no
+   soldering beyond tinning the module pads: DevKitC + Killer + TP4056 +
+   MT3608 + LiPo + one tactile switch, parts in
+   [`docs/BOM.md`](docs/BOM.md#opentag-mini-delta).
+3. **Flash the Mini firmware** (same library filesystem as the handheld):
+   ```sh
+   cd device
+   pio run -e opentag_mini -t upload
+   pio run -e opentag_mini -t uploadfs
+   ```
+4. Pair from the app or web page — the device shows up as **OpenTag Mini**
+   and connects with no PIN prompt. The single button: **short press**
+   chirps the battery level (one chirp per 20 %), **triple press** toggles
+   travel mode, **hold 1.5 s** powers off (short press wakes).
+
+
 ESP32-S3-DevKitC-1 + **PN532Killer** (ST25R3916-class NFC emulator; the
 classic PN532 cannot present the 7-byte, signature-bound UIDs amiibo relies
 on) + SSD1351 OLED + four buttons (UP / DOWN / OK / BACK) + LiPo power
@@ -174,22 +212,26 @@ interface map and [`hardware/`](hardware/) for:
 | `docs/WIRING.md` | Assembly, power chain, signal map, bring-up |
 | `docs/HARDWARE.md` | Device interface baseline — the contract the firmware implements (buttons, display, NFC, power, USB) |
 | `hardware/cad/opentag_shell.cad` | Parametric 2-part handheld shell + button caps, with the ⚡-marked USB-C charge port on the west wall and a lanyard loop tab on the SW corner (OpenSCAD source; `.cad` is the project's extension) |
-| `hardware/cad/stl/*.stl` | Print-ready binary STL: front shell, back plate, button cap (print 4 caps) |
+| `hardware/cad/opentag_mini_shell.cad` | Parametric 2-part **Mini** shell + its single button cap — screenless variant, 83.6 × 93.6 × 16.3 mm, module trays instead of a carrier PCB, same west USB / east charge-slot layout and lanyard loop |
+| `hardware/cad/stl/*.stl` | Print-ready binary STLs: handheld front shell, back plate, button cap (print 4) and optional desk stand; Mini front shell, back plate, button cap (print 1) |
 | `tools/cad_to_stl.py` | Regenerates the STLs from the `.cad` without OpenSCAD (`pip install trimesh manifold3d scipy rtree`) and self-checks watertightness, features and front/back fit |
-| `docs/BOM.md` | Parts list and budget (≈ $72–102) |
-| `docs/opentag-user-guide.pdf` | The printed instruction booklet — 15 A5 pages covering charging, the desk stand, buttons, the library, V3 amiibo, BLE sync, writes, USB drive and troubleshooting |
+| `tools/cad_mini_to_stl.py` | Same idea for the Mini shell: parses `opentag_mini_shell.cad`, rebuilds all three parts, and self-checks volumes, features and front/back fit || `docs/BOM.md` | Parts list and budget (≈ $72–102) |
+| `docs/opentag-user-guide.pdf` | The printed instruction booklet — 16 A5 pages covering charging, the desk stand, buttons, the library, V3 amiibo, BLE sync, writes, USB drive, the Mini variant and troubleshooting |
 | `docs/ANDROID-APP.md` | Android companion app — features, BLE protocol, releases |
 | `docs/SIGNING-KEY.md` | The committed APK signing key: why it's public, and how to swap in a private one |
 | `tools/make_booklet.py` | Regenerates the booklet (`pip install fpdf2`); its cover art is parsed straight from the shell's own wordmark font and bolt icon |
 
 ## Updating the firmware (keeps your amiibos)
 
-Push a `v*` tag and CI (`.github/workflows/firmware.yml`) builds the firmware
-and attaches it to a GitHub release. Then, on any computer with Python:
+Push a `v*` tag and CI (`.github/workflows/firmware.yml`) builds **both**
+firmwares — the handheld and the Mini — and attaches them to a GitHub
+release as `opentag-firmware-<tag>.bin` and
+`opentag-mini-firmware-<tag>.bin`. Then, on any computer with Python:
 
 ```sh
 pip install esptool
-python tools/update_opentag.py            # auto port, latest release
+python tools/update_opentag.py            # auto port, latest release (handheld)
+python tools/update_opentag.py --mini     # the Mini variant
 python tools/update_opentag.py --tag v1.2 # a specific release
 python tools/update_opentag.py --bin firmware.bin --port COM5
 ```
@@ -226,13 +268,19 @@ fixtures generated by the real
 HMAC-SHA256 reference backends are themselves validated against FIPS-197,
 FIPS-180-4 and RFC 4231 vectors first.
 
-A firmware compile gate (syntax/type check of `src/main.cpp` against stub
+A firmware compile gate (syntax/type check of both firmwares against stub
 Arduino/NimBLE/mbedtls headers — no toolchain download needed):
 
 ```sh
 cd device/test
 g++ -std=c++11 -Wall -Wextra -fsyntax-only -I host_stubs_main -I ../src ../src/main.cpp
+g++ -std=c++11 -Wall -Wextra -fsyntax-only -I host_stubs_main -I ../src ../src/mini/main.cpp
 ```
+
+CI runs all of the above plus full PlatformIO builds of **both** firmwares
+on every PR or push touching `device/`
+([firmware.yml](.github/workflows/firmware.yml)); only `v*` tag pushes
+publish releases.
 
 ## Web sync
 
@@ -320,6 +368,14 @@ top-right of the screen confirms the pad is coupled. Soft-off still draws a few 
 (the DevKitC regulator and boost stay alive), so use the side switch when
 storing the device.
 
+**On the Mini** the two ports live on opposite walls: the **DevKit's USB-C
+on the west wall** (flashing, serial console, the read-only USB drive) and
+the **TP4056 charge port on the east wall** — its USB-C jack and charge
+LEDs sit in the east-wall slot with the light-pipe bore just beside it, so
+charging is still visible with the case closed. There is no Qi option on
+the Mini (the receiver coil would cover the Killer's tap window); charge
+over USB-C.
+
 ## Device menu
 
 `Amiibo library` (first — emulation is the main use, so the menu opens on
@@ -376,9 +432,11 @@ piezo fitted); below 3.25 V sustained for 30 s it runs the clean
 power-off flow to protect the cell (charging suspends the checks — the
 terminal voltage rises while the TP4056 is active).
 
-**Pairing & OTA:** the first BLE connection runs numeric-comparison pairing:
-a random 6-digit PIN appears on the OLED, the phone shows the same code,
-and the bond is stored. **Wi-Fi updates:** in the web page's Settings (or
+**Pairing & OTA:** on the **handheld**, the first BLE connection runs
+numeric-comparison pairing: a random 6-digit PIN appears on the OLED, the
+phone shows the same code, and the bond is stored. **The Mini pairs with
+no PIN at all** (just-works, bond stored — screenless devices have nothing
+to show a code on). **Wi-Fi updates:** in the web page's Settings (or
 via BLE) send `WIFI:<ssid>|<pass>` once, then `OTA:START` (or the web page's
 Update button) — the device joins Wi-Fi, fetches the newest GitHub release,
 flashes only the app partition and reboots. Library, keys and settings
@@ -407,6 +465,15 @@ There is no undo — re-load your dumps from the web page afterwards.
 Preview the whole interface (buttons, long-press, every screen,
 power off/on) in your
 browser with [`device/web-preview/index.html`](device/web-preview/index.html).
+
+**The Mini has no on-device menu** — every action above is reachable from
+the Android app or the web page, which present the Mini-appropriate subset
+(emulation, backup, inspect, random-UID, note write/emulate, library
+management, USB drive, Wi-Fi/OTA). The single button covers what a
+screenless device still needs locally: battery chirps, travel-mode toggle,
+power off/wake, and cancelling an armed action (any press). Pairing is
+just-works — no PIN is ever shown — and `INFO` reports the model so the
+app and web page label the device **Mini** automatically.
 
 ## Scope notes
 

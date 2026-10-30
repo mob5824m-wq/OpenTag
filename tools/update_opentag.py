@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """OpenTag firmware updater.
 
-Grabs the latest firmware image for the OpenTag handheld and installs it over
+Grabs the latest firmware image for an OpenTag device and installs it over
 USB serial WITHOUT touching the LittleFS partition that holds your amiibo
-library (or the NVS settings).
+library (or the NVS settings). Two devices share the releases page:
+the handheld (default) and the screenless OpenTag Mini (--mini).
 
 How it works
 ------------
@@ -20,7 +21,8 @@ How it works
 
 Usage
 -----
-    python tools/update_opentag.py                 # latest release
+    python tools/update_opentag.py                 # latest release, handheld
+    python tools/update_opentag.py --mini          # latest release, Mini
     python tools/update_opentag.py --port COM5     # explicit serial port
     python tools/update_opentag.py --tag v1.2      # specific release
     python tools/update_opentag.py --bin firmware.bin --port /dev/ttyACM0
@@ -103,8 +105,12 @@ def fetch_url(url, dest, token=None):
     return dest
 
 
-def latest_release(token=None, tag=None):
-    """Return (tag, asset_url) for the newest (or given) release with a binary."""
+def latest_release(token=None, tag=None, mini=False):
+    """Return (tag, asset_url) for the newest (or given) release with a binary.
+
+    Releases carry two firmwares (handheld + Mini); --mini picks the Mini's
+    image. Older releases with a single generic firmware.bin still work.
+    """
     hdrs = {"Accept": "application/vnd.github+json",
             "User-Agent": "opentag-updater"}
     if token:
@@ -123,10 +129,17 @@ def latest_release(token=None, tag=None):
         die(f"GitHub API error ({e.code}) for {url}")
     except urllib.error.URLError as e:
         die(f"GitHub API unreachable: {e.reason}")
+    wanted = "opentag-mini-firmware-" if mini else "opentag-firmware-"
+    fallback = None
     for asset in rel.get("assets", []):
         name = asset.get("name", "")
         if name.endswith(".bin") and "firmware" in name.lower():
-            return rel.get("tag_name", "?"), asset["browser_download_url"]
+            if name.startswith(wanted):
+                return rel.get("tag_name", "?"), asset["browser_download_url"]
+            if fallback is None:
+                fallback = asset["browser_download_url"]
+    if fallback is not None:
+        return rel.get("tag_name", "?"), fallback
     # Some setups zip the firmware; accept a .zip asset too.
     for asset in rel.get("assets", []):
         if asset.get("name", "").endswith(".zip"):
@@ -134,7 +147,7 @@ def latest_release(token=None, tag=None):
     return rel.get("tag_name", "?"), None
 
 
-def build_locally():
+def build_locally(mini=False):
     """Fall back to building with PlatformIO if no release asset exists."""
     print("  no release asset found - trying a local PlatformIO build")
     try:
@@ -142,10 +155,11 @@ def build_locally():
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return None
-    r = subprocess.run(["pio", "run", "-e", "opentag_s3"], cwd=DEVICE_DIR)
+    env = "opentag_mini" if mini else "opentag_s3"
+    r = subprocess.run(["pio", "run", "-e", env], cwd=DEVICE_DIR)
     if r.returncode != 0:
         return None
-    fw = os.path.join(DEVICE_DIR, ".pio", "build", "opentag_s3", "firmware.bin")
+    fw = os.path.join(DEVICE_DIR, ".pio", "build", env, "firmware.bin")
     return fw if os.path.isfile(fw) else None
 
 
@@ -231,6 +245,8 @@ def main():
     ap.add_argument("--tag", help="download a specific GitHub release tag")
     ap.add_argument("--baud", type=int, default=921600, help="flash baud rate (default 921600)")
     ap.add_argument("--list", action="store_true", help="only show what would be flashed")
+    ap.add_argument("--mini", action="store_true",
+                    help="update the screenless OpenTag Mini instead of the handheld")
     args = ap.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN")  # optional, for private repos/rate limits
@@ -247,7 +263,7 @@ def main():
         binpath = os.path.abspath(args.bin)
         print(f"  firmware      : local {binpath}")
     else:
-        tag, url = latest_release(token=token, tag=args.tag)
+        tag, url = latest_release(token=token, tag=args.tag, mini=args.mini)
         if url:
             print(f"  firmware      : GitHub release {tag}")
             dl = url if url.startswith("http") else f"{GITHUB_DL}/{tag}/{url}"
@@ -257,7 +273,7 @@ def main():
             fetch_url(dl, dest, token=token)
             binpath = extract_bin(dest)
         else:
-            built = build_locally()
+            built = build_locally(mini=args.mini)
             if not built:
                 die("no release asset and no local PlatformIO build. "
                     "Push a release (CI attaches firmware.bin), install pio, "

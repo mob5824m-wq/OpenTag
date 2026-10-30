@@ -73,6 +73,31 @@ supports: both halves print as drawn (front face-down, plate flat-side-down).
 | 22 | Desk stand (optional) | 1 | PLA/PETG; device leans ~10° chin-down, charges while docked |
 | 23 | Acrylic rod ⌀2.5 mm (optional light pipe) | ~5 mm | Sand/polish the ends; nudge `lp_y` in the `.cad` onto your module's LED |
 
+## OpenTag Mini delta
+
+The screenless variant ([`../hardware/cad/opentag_mini_shell.cad`](../hardware/cad/opentag_mini_shell.cad))
+uses the **same** DevKitC-1, PN532Killer, TP4056, MT3608, LiPo, switch,
+diodes, sense resistors and piezo as the handheld (items 1, 2, 4–8, 7b–7d
+above, unchanged). Changes:
+
+| # | Part | Qty | Notes |
+|---|------|----|-------|
+| — | ~~SSD1351 OLED module (item 3)~~ | 0 | The Mini has no screen — the app/web page is the UI |
+| — | ~~Carrier PCB + DevKit/OLED sockets (items 9–11)~~ | 0 | Modules mount in printed trays, point-to-point wiring (`WIRING.md`) |
+| 13m | Tactile switch 6×6 mm, ~8.5 mm seated height | **1** | The single OK button, foam-taped to its pedestal (GPIO1) |
+| 4m | LiPo cell 40 × 30 × 8 mm (~500 mAh class, protected, JST-PH) | 1 | Sits on the DevKitC; adjust `bat_*` in the mini `.cad` for other sizes |
+| 18m | **Closed-cell foam pad, 2 mm, ~40 × 30 mm** | 1 | Double-sided, on the cell's underside — the battery sandwich's spring |
+| 19m | Mini front shell | 1 | `hardware/cad/stl/opentag_mini_front_shell.stl` |
+| 20m | Mini back plate | 1 | `hardware/cad/stl/opentag_mini_back_plate.stl` |
+| 21m | Mini button cap | **1** | `hardware/cad/stl/opentag_mini_button_cap.stl` |
+| — | ~~Qi receiver / transmitter (items 5b, 5c)~~ | 0 | No Qi on the Mini — the coil would cover the tap window |
+
+Shell closure uses the same four M3 screws as item 15 (no PCB standoffs).
+Regenerate the STLs with `python3 tools/cad_mini_to_stl.py` (self-checking).
+
+**Mini budget:** the handheld total minus OLED (~$10) and PCB/sockets
+(~$10) ≈ **$52–82**, filament unchanged.
+
 ## Where to buy (no affiliation)
 
 - PN532Killer: pn532killer.com or the NFC-funs store on AliExpress/Taobao

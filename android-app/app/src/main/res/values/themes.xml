@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark theme matching the web sync page; all real colors live in the
+         layout/drawables, the theme just keeps the system chrome dark. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_window</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:colorAccent">@color/mint</item>
+        <item name="android:colorControlActivated">@color/mint</item>
+        <item name="android:textColorHint">@color/muted</item>
+        <item name="android:colorEdgeEffect">@color/mint</item>
+    </style>
+</resources>

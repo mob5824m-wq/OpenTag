@@ -1,129 +1,1045 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Mirrors the web sync page (device/web-sync/index.html): one scrolling
+     column of cards on the dark mint/violet theme. All ids referenced from
+     MainActivity.kt are preserved; new ones: stateDot, stateText, clearNote,
+     dbSearch, dbCount, dbList, localEmpty, deviceEmpty. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
-
-    <TextView
-        android:id="@+id/status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Not connected"
-        android:textStyle="bold"
-        android:paddingBottom="6dp"/>
+    android:background="@drawable/bg_window"
+    android:scrollbars="none">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/connect"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="48dp">
+
+        <!-- brand: mint mark + wordmark -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Connect over BLE"/>
-        <Button
-            android:id="@+id/disconnect"
-            android:layout_width="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <View
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/mark"/>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="opentag"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="-0.02"
+                    android:textColor="@color/text"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="DEVICE SYNC"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.15"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Disconnect"
-            android:enabled="false"/>
+            android:layout_marginTop="22dp"
+            android:text="Your tags,\nready to tap."
+            android:textSize="34sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.03"
+            android:lineSpacingMultiplier="1.06"
+            android:textColor="@color/text"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Send a text note or web URL to your OpenTag over Bluetooth LE, upload your own NTAG215 amiibo backups to the on-device library, emulate any of them from the device\u2019s menu or right here in the app — and browse the full amiibo database with box art below, no connection needed."
+            android:textSize="14sp"
+            android:lineSpacingMultiplier="1.45"
+            android:textColor="@color/muted"/>
+
+        <!-- ======================= device connection ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Device connection"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text"/>
+
+                    <TextView
+                        android:id="@+id/deviceInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bluetooth LE · works with OpenTag and OpenTag Mini"
+                        android:textSize="12sp"
+                        android:layout_marginTop="2dp"
+                        android:textColor="@color/muted"/>
+                </LinearLayout>
+
+                <View
+                    android:id="@+id/stateDot"
+                    android:layout_width="21dp"
+                    android:layout_height="21dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/dot"/>
+
+                <TextView
+                    android:id="@+id/stateText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Not connected"
+                    android:textSize="13sp"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="16dp">
+
+                <Button
+                    android:id="@+id/connect"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Connect over BLE"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"/>
+
+                <Button
+                    android:id="@+id/disconnect"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Disconnect"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <!-- notice: violet left bar -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="14dp">
+
+                <View
+                    android:layout_width="3dp"
+                    android:layout_height="match_parent"
+                    android:background="@color/violet"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="Power the device on (the handheld advertises as OpenTag, the screenless compact build as OpenTag Mini — the Mini pairs without a PIN), then tap Connect over BLE. Android asks for Bluetooth permissions on first use — they are required for scanning. Everything the device answers appears in the log below."
+                    android:textSize="12sp"
+                    android:lineSpacingMultiplier="1.4"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/log"
+                android:layout_width="match_parent"
+                android:layout_height="170dp"
+                android:layout_marginTop="13dp"
+                android:background="@drawable/log_bg"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="11dp"
+                android:paddingBottom="11dp"
+                android:fontFamily="monospace"
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.35"
+                android:gravity="bottom"
+                android:scrollbars="vertical"
+                android:textColor="@color/log_text"
+                android:text="Ready. Connect to your OpenTag device, then pick amiibo .bin, .nfc or .zip files to copy them onto the device. Tap a phone entry to upload it; tap a device entry to emulate it."/>
+        </LinearLayout>
+
+        <!-- ======================= NDEF note ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="NDEF note"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="— a short text or link the tag carries"
+                    android:textSize="12sp"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="An NDEF note is the standard \u201Cmessage\u201D stored on NFC tags: up to 200 bytes of plain text or an http(s) link. Send it to the device, and the device menu\u2019s Write / Emulate / Clear NDEF note items act on it — a blank NTAG215 can then carry it, or the device can emulate it as a virtual tag."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:text="Content"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="A short note or https://example.com"
+                android:inputType="text"
+                android:maxLength="200"
+                android:maxLines="1"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="12dp">
+
+                <Button
+                    android:id="@+id/sendNote"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Send note now"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/clearNote"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Clear device note"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <!-- write / emulate the note on a real or virtual tag — the
+                 screenless OpenTag Mini has no menu for these, so they live
+                 here; on the handheld they mirror its NDEF menu items -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/writeNote"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Write to NTAG215"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/emuNote"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Emulate note"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Write to NTAG215 arms the device — tap a blank tag on its antenna and the note is written and read-back verified. Emulate note presents it as a virtual tag instead."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Text starting with http:// or https:// is sent as a URL record, everything else as plain text. The note survives reboots."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+        </LinearLayout>
+
+        <!-- ======================= amiibo library ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Amiibo library"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/text"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Pick a .zip, loose .bin dumps, or Flipper Zero .nfc files from your own collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized on the phone, validated, then copied to the device over BLE. Kirby Air Riders v3 dumps (1024-byte NTAG I²C page images) are accepted as-is for emulation. Nothing is uploaded to any server."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="15dp">
+
+                <Button
+                    android:id="@+id/pick"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Choose .zip / .bin / .nfc"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"/>
+
+                <Button
+                    android:id="@+id/uploadAll"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Upload all"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="268dp"
+                android:layout_marginTop="12dp">
+
+                <ListView
+                    android:id="@+id/localList"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="8dp"
+                    android:listSelector="@drawable/item_sel"
+                    android:scrollbars="none"
+                    android:overScrollMode="never"/>
+
+                <TextView
+                    android:id="@+id/localEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:gravity="center"
+                    android:text="No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, padded or N2-headered OK), 1024-byte v3 Air Riders dumps, Flipper Zero .nfc, or a .zip containing any of those."
+                    android:textSize="12sp"
+                    android:lineSpacingMultiplier="1.4"
+                    android:textColor="@color/muted"/>
+            </FrameLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="17dp"
+                android:layout_marginBottom="17dp"
+                android:background="@color/card_line"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="On device"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/text"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="10dp">
+
+                <Button
+                    android:id="@+id/refresh"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Refresh list"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/stopEmu"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Stop emulation"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <!-- reader-mode tools: back up an own tag into the library and
+                 identify any tag — on the handheld these are menu items; on
+                 the screenless OpenTag Mini this is the only way to them -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/backupTag"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Back up a tag"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/inspectTag"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Inspect a tag"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Back up arms the reader: tap your own amiibo on the device antenna and it is saved to the library under its UID. Inspect identifies any tag — the UID, chip type and any NDEF text appear in the log."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="222dp"
+                android:layout_marginTop="12dp">
+
+                <ListView
+                    android:id="@+id/deviceList"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="8dp"
+                    android:listSelector="@drawable/item_sel"
+                    android:scrollbars="none"
+                    android:overScrollMode="never"/>
+
+                <TextView
+                    android:id="@+id/deviceEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:gravity="center"
+                    android:text="Device library is empty — sync some dumps, then browse them in the Amiibo library menu (or right here on the Mini)."
+                    android:textSize="12sp"
+                    android:lineSpacingMultiplier="1.4"
+                    android:textColor="@color/muted"/>
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="Use only backups of amiibo you own. Amiibo data is Nintendo proprietary; this app and the device never bundle or generate it — you supply your own dumps."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/warn"/>
+        </LinearLayout>
+
+        <!-- ======================= amiibo database ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Amiibo database"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="— browse before you sync"
+                    android:textSize="12sp"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Every figure in the open AmiiboAPI database, with box art, series, type and release year — the same data your dumps are matched against above. Needs no device connection; box art loads from AmiiboAPI\u2019s image host (needs internet, nothing is sent anywhere)."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/dbSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="Search name, series or game — e.g. link, animal crossing, smash…"
+                android:inputType="text"
+                android:maxLines="1"
+                android:imeOptions="actionDone"/>
+
+            <TextView
+                android:id="@+id/dbCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text=""
+                android:textSize="12sp"
+                android:textColor="@color/muted"/>
+
+            <ListView
+                android:id="@+id/dbList"
+                android:layout_width="match_parent"
+                android:layout_height="336dp"
+                android:layout_marginTop="12dp"
+                android:divider="@android:color/transparent"
+                android:dividerHeight="8dp"
+                android:listSelector="@drawable/item_sel"
+                android:scrollbars="none"
+                android:overScrollMode="never"/>
+        </LinearLayout>
+
+        <!-- ======================= signing keys ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Amiibo signing keys"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="(advanced)"
+                    android:textSize="12sp"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="OpenTag emulates amiibo — no physical tag writing needed. These keys are only for the optional advanced flow that survives on the device (long-press in its library writes to a real NTAG215, TagMo-style, using your unfixed-info.bin and locked-secret.bin). A combined 160-byte retail key file also works. Files are identified by their embedded type string, stored in the device\u2019s NVS, and never bundled with this project or sent anywhere else."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="15dp">
+
+                <Button
+                    android:id="@+id/keyPick"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Choose key .bin files"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"/>
+
+                <Button
+                    android:id="@+id/uploadKeys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Upload keys"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/keyStatusBtn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Check status"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/forgetKeys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Forget keys"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/keyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Key state: unknown — connect and check"
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Only use key files you legally extracted yourself. Uploading them is your responsibility."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/warn"/>
+        </LinearLayout>
+
+        <!-- ======================= firmware updates ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Firmware updates over Wi-Fi"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/text"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Save your Wi-Fi credentials once, then update the OpenTag without a computer: it fetches the newest firmware release from GitHub, flashes only the app partition and reboots — your amiibo library, keys and note survive every update. Credentials live in the device\u2019s settings and are only used for updates. The wired one-command updater (tools/update_opentag.py) keeps working without any of this."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:text="Wi-Fi name (SSID)"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/wifiSsid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="MyNetwork"
+                android:inputType="text"
+                android:maxLength="32"
+                android:maxLines="1"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Password"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/wifiPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="••••••••"
+                android:inputType="textPassword"
+                android:maxLength="64"
+                android:maxLines="1"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="15dp">
+
+                <Button
+                    android:id="@+id/wifiSave"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Save Wi-Fi"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/otaCheck"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Check status"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/otaStart"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Update now"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Updating needs battery or a charger connected — a power loss during flashing falls back to the previous app on the next boot, but finishing an update is nicer. Progress streams into the sync log; the device\u2019s button cancels (BACK, or OK on the Mini)."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/warn"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="OpenTag is an independent open-source project. NFC writes replace the existing NDEF area of the selected NTAG215. Confirm on the device before writing; only use tags you own or are authorized to program."
+            android:textSize="11sp"
+            android:lineSpacingMultiplier="1.4"
+            android:textColor="@color/muted"/>
     </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingTop="10dp">
-        <EditText
-            android:id="@+id/note"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:hint="NDEF note (text or https:// URL)"
-            android:inputType="text"
-            android:maxLength="200"/>
-        <Button
-            android:id="@+id/sendNote"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Send"
-            android:enabled="false"/>
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="14dp"
-        android:paddingBottom="4dp"
-        android:textStyle="bold"
-        android:text="Amiibo dumps (phone)"/>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/pick"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="Pick .bin / .zip"/>
-        <Button
-            android:id="@+id/uploadAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Upload all"
-            android:enabled="false"/>
-    </LinearLayout>
-
-    <ListView
-        android:id="@+id/localList"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="2"/>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="14dp"
-        android:paddingBottom="4dp"
-        android:textStyle="bold"
-        android:text="On device"/>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/refresh"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="Refresh list"
-            android:enabled="false"/>
-        <Button
-            android:id="@+id/stopEmu"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Stop emulation"
-            android:enabled="false"/>
-    </LinearLayout>
-
-    <ListView
-        android:id="@+id/deviceList"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="2"/>
-
-    <TextView
-        android:id="@+id/log"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:textSize="11sp"
-        android:fontFamily="monospace"
-        android:paddingTop="8dp"
-        android:text="Ready. Connect to your OpenTag device, then pick amiibo .bin files (or a .zip of them) to dump them onto the device. Tap a phone entry to upload it; tap a device entry to emulate it. Matching file names get amiibo metadata and box art."/>
-</LinearLayout>
+</ScrollView>

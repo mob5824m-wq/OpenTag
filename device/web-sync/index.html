@@ -8,7 +8,7 @@
   <style>
     :root{color-scheme:dark;--bg:#11151c;--panel:#1b212b;--line:#303a49;--text:#f4f6f8;--muted:#9ba7b7;--mint:#b6f36a;--violet:#bba8ff;--bad:#ff8b8b}
     *{box-sizing:border-box}body{margin:0;background:radial-gradient(800px 500px at 90% -10%,#28334b 0,transparent 65%),var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;min-height:100vh}
-    main{max-width:880px;margin:auto;padding:28px 18px 56px}.brand{display:flex;align-items:center;gap:12px;margin:4px 0 30px}.mark{background:var(--mint);color:#10131b;width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-weight:900;font-size:20px}.brand strong{font-size:20px;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);letter-spacing:1.5px;font-size:10px;font-weight:700}
+    main{max-width:880px;margin:auto;padding:28px 18px 56px}.brand{display:flex;align-items:center;gap:12px;margin:4px 0 30px}.mark{background:var(--panel);border:1px solid var(--line);width:40px;height:40px;border-radius:14px;display:grid;place-items:center}.mark svg{width:27px;height:27px;display:block}.brand strong{font-size:20px;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);letter-spacing:1.5px;font-size:10px;font-weight:700}
     h1{font-size:clamp(30px,7vw,47px);line-height:1.06;letter-spacing:-1.7px;margin:0 0 12px}.lede{color:var(--muted);max-width:680px;margin:0 0 24px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.card{background:linear-gradient(145deg,#202735,#1a2029);border:1px solid #2b3442;border-radius:22px;padding:20px;margin:16px 0}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#697789}.dot.ok{background:var(--mint);box-shadow:0 0 14px #b6f36a77}.dot.err{background:var(--bad)}
     button,.filebtn{border:0;border-radius:13px;padding:12px 16px;background:var(--mint);color:#10131b;font-weight:750;cursor:pointer;font:inherit;font-size:13px}button.secondary,.filebtn{background:#2a3341;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:7px;flex:1;min-width:210px}.field label{font-size:12px;color:var(--muted);font-weight:650}input,select{width:100%;border:1px solid var(--line);background:#111720;color:var(--text);border-radius:12px;padding:12px 13px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--mint)}.sub{font-size:12px;color:var(--muted)}
     .library{display:grid;gap:8px;margin-top:16px}.item{display:flex;gap:12px;align-items:center;background:#141a22;border:1px solid #293341;border-radius:15px;padding:12px}.item .copy{flex:1;min-width:0}.item strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.item small{color:var(--muted)}.item button{padding:8px 11px}.thumb{width:44px;height:44px;border-radius:9px;overflow:hidden;flex:none;background:#0d1219;display:flex;align-items:center;justify-content:center;color:#cfe3d0;font-size:18px;font-weight:800}.thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb.ghost{border:1px solid #293341}.tag{font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--violet);padding:4px 7px;border:1px solid #554c78;border-radius:7px;white-space:nowrap}.tag.ok{color:var(--mint);border-color:#5b7135}.tag.bad{color:var(--bad);border-color:#7a4040}
@@ -18,13 +18,13 @@
   </style>
 </head>
 <body><main>
-  <header class="brand"><div class="mark">N</div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
+  <header class="brand"><div class="mark"><svg viewBox="0 0 108 108" aria-hidden="true"><path d="M69.94,49.33A23.50,23.50 0 1 1 59.67,39.06L53.81,50.56A10.60,10.60 0 1 0 58.44,55.19Z" fill="#b6f36a"/><path d="M59.42,43.38a6.20,6.20 0 1 0 12.40,0a6.20,6.20 0 1 0 -12.40,0Z" fill="#bba8ff"/></svg></div><div><strong>opentag</strong><small>DEVICE SYNC</small></div></header>
   <h1>Your tags,<br>ready to tap.</h1>
-  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the OLED menu — and browse the full amiibo database with box art below, no connection needed.</p>
+  <p class="lede">Send plain text or a web URL to your OpenTag device over Bluetooth LE, upload a .zip of your own NTAG215 amiibo backups to the on-device library, emulate any of them from the device's menu or right here in the page — and browse the full amiibo database with box art below, no connection needed.</p>
   <section class="card">
     <div class="row" style="justify-content:space-between"><div><strong>Device connection</strong><div class="sub">Chrome or Edge · page served from localhost or HTTPS</div></div><div class="status"><span class="dot" id="dot"></span><span id="state">Not connected</span></div></div>
     <div class="row" style="margin-top:16px"><button id="connect">Connect over BLE</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
-    <div class="notice">Power the device on (it advertises as <b>OpenTag</b>), then press <b>Connect over BLE</b>. If the browser refuses: Web Bluetooth needs a secure origin — run <code>python3 -m http.server 8000</code> inside this <code>web-sync</code> folder and open <code>http://localhost:8000</code> (opening the file directly is not enough). Everything the device answers appears in the log below.</div>
+    <div class="notice">Power the device on (the handheld advertises as <b>OpenTag</b>, the screenless compact build as <b>OpenTag Mini</b> — the Mini pairs without a PIN), then press <b>Connect over BLE</b>. If the browser refuses: Web Bluetooth needs a secure origin — run <code>python3 -m http.server 8000</code> inside this <code>web-sync</code> folder and open <code>http://localhost:8000</code> (opening the file directly is not enough). Everything the device answers appears in the log below.</div>
     <div id="log" aria-live="polite"></div>
   </section>
 
@@ -33,6 +33,8 @@
     <p class="sub">An <b>NDEF note</b> is the standard "message" stored on NFC tags: up to 200 bytes of plain text or an http(s) link. Queue one here, send it to the device, and the device can either write it onto a blank NTAG215 tag (any NFC phone can then read it) or emulate it as a virtual tag. Exactly the note below is what the device menu's <i>Write / Emulate / Clear NDEF note</i> items act on.</p>
     <form id="addForm"><div class="row"><div class="field"><label for="kind">Record type</label><select id="kind"><option value="TEXT">Text</option><option value="URL">Web URL</option></select></div><div class="field" style="flex:3"><label for="value">Content</label><input id="value" maxlength="200" required placeholder="A short note or https://example.com"></div><button type="submit">Queue note</button></div></form>
     <div class="row" style="margin-top:15px"><button id="send" class="secondary" disabled>Send note now</button><button id="clear" class="secondary" disabled>Clear device note</button></div>
+    <div class="row" style="margin-top:8px"><button id="writeNote" class="secondary" disabled>Write to NTAG215</button><button id="emuNote" class="secondary" disabled>Emulate note</button></div>
+    <p class="sub" style="margin-top:10px">Write to NTAG215 arms the writer — tap a blank tag on the device antenna and the note is written and read-back verified. Emulate note presents it as a virtual tag instead. On the handheld these mirror its NDEF menu items; the screenless OpenTag Mini has them only here.</p>
     <details style="margin-top:12px"><summary class="sub" style="cursor:pointer">How the note flow works, step by step</summary>
       <p class="sub" style="margin:8px 0 0">1. Pick <b>Text</b> or <b>Web URL</b>, type the content, press <b>Queue note</b> — it is only staged in this page so far.<br>
       2. <b>Send note now</b> pushes it to the device over BLE; the device stores it (survives reboots) and shows it at the bottom of its menu.<br>
@@ -45,6 +47,8 @@
     <strong>Amiibo library</strong>
     <p class="sub">Upload a <b>.zip</b>, loose <b>.bin</b> dumps, or Flipper Zero <b>.nfc</b> files from your own collection — any layout (532/540/572 bytes, padded, or with an N2-style header) is normalized in your browser, validated, then copied to the device over BLE. Kirby Air Riders <b>v3</b> dumps (1024-byte NTAG I²C page images) are accepted as-is for emulation. Nothing is uploaded to any server.</p>
     <div class="row"><label class="filebtn" for="zipFile">Choose .zip / .bin / .nfc</label><input id="zipFile" class="hidden" type="file" accept=".zip,.bin,.nfc,.tag,.dump,application/zip,text/plain" multiple><button id="syncZip" disabled>Sync to device</button><button id="refresh" class="secondary" disabled>Refresh list</button><button id="stopEmu" class="secondary" disabled>Stop emulation</button></div>
+    <div class="row" style="margin-top:8px"><button id="backupTag" class="secondary" disabled>Back up a tag</button><button id="inspectTag" class="secondary" disabled>Inspect a tag</button></div>
+    <p class="sub" style="margin-top:10px">Back up arms the reader: tap your own amiibo on the device antenna and it is saved to the library under its UID. Inspect identifies any tag — UID, chip type and any NDEF text appear in the log below.</p>
     <div id="parsed" class="library"></div>
     <div class="rule"></div>
     <strong style="font-size:13px">On device</strong>
@@ -398,7 +402,9 @@
   function setState(text, mode = '') { $('state').textContent = text; $('dot').className = 'dot ' + mode; }
   function setConnectedButtons(on) {
     $('disconnect').disabled = !on;
-    for (const id of ['send', 'clear', 'syncZip', 'refresh', 'stopEmu', 'uploadKeys', 'keyStatusBtn', 'forgetKeys', 'wifiSave', 'otaCheck', 'otaStart']) $(id).disabled = !on;
+    for (const id of ['send', 'clear', 'writeNote', 'emuNote', 'syncZip', 'refresh', 'stopEmu',
+                      'backupTag', 'inspectTag', 'uploadKeys', 'keyStatusBtn', 'forgetKeys',
+                      'wifiSave', 'otaCheck', 'otaStart']) $(id).disabled = !on;
   }
 
   function expect(prefix, timeoutMs) {
@@ -410,6 +416,28 @@
     });
   }
   function onNotify(text) {
+    if (text.startsWith('OK:backup:')) {
+      log('Backed up as ' + text.slice(10) + '.');
+      refreshLibrary();
+    } else if (text.startsWith('OK:inspect:')) {
+      const parts = text.slice(11).split(':');
+      log('Tag: ' + (parts[0] || '?') + ' · ' + (parts[1] || '?') +
+          (parts.length > 2 && parts[2] !== '-' ? ' · NDEF: ' + parts.slice(2).join(':') : ' · no NDEF data'));
+    } else if (text.startsWith('OK:info:')) {
+      // "OK:info:<standard|mini>:<millivolts>:<charging 0/1>"
+      const parts = text.split(':');
+      if (parts.length >= 5 && device) {
+        let label = device.name || (parts[2] === 'mini' ? 'OpenTag Mini' : 'OpenTag');
+        if (parts[2] === 'mini') label += ' (screenless)';
+        const mv = parseInt(parts[3], 10);
+        if (mv > 0) {
+          const pct = Math.max(0, Math.min(100, Math.round((mv / 1000 - 3.30) / 0.80 * 100)));
+          label += ' · ' + pct + '% battery';
+        }
+        if (parts[4] === '1') label += ' · charging';
+        setState(label, 'ok');
+      }
+    }
     log(text, text.startsWith('ERR') ? 'err' : 'ok');
     if (listing && text.startsWith('AMI:')) {
       const idx = text.indexOf(':', 4);
@@ -450,7 +478,7 @@
     const root = $('deviceLib'); root.replaceChildren();
     if (!deviceLib.length) {
       const p = document.createElement('p'); p.className = 'sub';
-      p.textContent = 'Device library is empty — sync some dumps, then browse them in the Amiibo library menu on the OLED.';
+      p.textContent = 'Device library is empty — sync some dumps, then browse them in the Amiibo library menu (or right here on the Mini).';
       root.append(p); return;
     }
     deviceLib.forEach(name => {
@@ -475,12 +503,22 @@
       emu.onclick = async () => {
         try { await sendCmd('AMI:EMU:' + name); await expect('OK:emulating', 5000); } catch (e) { log(e.message, 'err'); }
       };
+      const write = document.createElement('button'); write.className = 'secondary'; write.textContent = 'Write';
+      write.title = 'TagMo-style write to a blank NTAG215 (needs keys)';
+      write.onclick = async () => {
+        try { await sendCmd('AMI:WRITE:' + name); } catch (e) { log(e.message, 'err'); }
+      };
+      const rand = document.createElement('button'); rand.className = 'secondary'; rand.textContent = 'R';
+      rand.title = 'Toggle per-entry UID randomization (needs keys)';
+      rand.onclick = async () => {
+        try { await sendCmd('AMI:RAND:' + name); await expect('OK:ami-rand', 3000); } catch (e) { log(e.message, 'err'); }
+      };
       const del = document.createElement('button'); del.className = 'secondary'; del.textContent = '×';
       del.setAttribute('aria-label', 'Delete from device');
       del.onclick = async () => {
         try { await sendCmd('AMI:DEL:' + name); await expect('OK:ami-deleted', 3000); await refreshLibrary(); } catch (e) { log(e.message, 'err'); }
       };
-      row.append(tag, copy, emu, del); root.append(row);
+      row.append(tag, copy, emu, write, rand, del); root.append(row);
     });
   }
 
@@ -571,7 +609,7 @@
     try {
       await sendCmd('OTA:START');
       await expect('OK:ota-started', 4000);
-      log('Update started — progress is on the OLED. Keep the device powered; BACK cancels.');
+      log('Update started — keep the device powered; the device’s button cancels (BACK, or OK on the Mini).');
     } catch (e) { log('OTA start failed: ' + e.message, 'err'); }
   };
 
@@ -639,6 +677,27 @@
     // Runs the same wipe the device's "Clear NDEF note" menu item performs
     // (firmware command NOTE:CLEAR). A new note can be sent at any time.
     try { await sendCmd('NOTE:CLEAR'); await expect('OK:note-cleared', 4000); }
+    catch (e) { log(e.message, 'err'); }
+  };
+  // Remote counterparts of the device's NDEF menu items (the screenless
+  // OpenTag Mini has no menu, so these are its only path to the feature).
+  $('writeNote').onclick = async () => {
+    try { await sendCmd('NOTE:WRITE'); await expect('OK:write-armed:note', 3000); log('Armed — tap a blank NTAG215 on the device antenna.'); }
+    catch (e) { log(e.message, 'err'); }
+  };
+  $('emuNote').onclick = async () => {
+    try { await sendCmd('NOTE:EMU'); await expect('OK:emulating', 5000); }
+    catch (e) { log(e.message, 'err'); }
+  };
+  // Reader mode: dump an own amiibo into the library / identify any tag.
+  // On the handheld these are menu items; the Mini is driven entirely from
+  // here or the Android app.
+  $('backupTag').onclick = async () => {
+    try { await sendCmd('AMI:BACKUP'); await expect('OK:backup-armed', 3000); log('Armed — tap your amiibo on the device antenna.'); }
+    catch (e) { log(e.message, 'err'); }
+  };
+  $('inspectTag').onclick = async () => {
+    try { await sendCmd('TAG:INSPECT'); await expect('OK:inspect-armed', 3000); log('Armed — tap any tag on the device antenna (retap to rescan).'); }
     catch (e) { log(e.message, 'err'); }
   };
 
@@ -709,6 +768,12 @@
       log('Connected. Requesting library…');
       await refreshLibrary();
       await refreshKeyStatus();
+      // Model + battery + charge state: differentiate the handheld from the
+      // screenless Mini and badge it in the state line.
+      try {
+        await sendCmd('INFO');
+        await expect('OK:info:', 3000);
+      } catch (e) { /* older firmware: no INFO reply */ }
     } catch (e) { setState('Not connected', 'err'); log(e.message, 'err'); }
   };
   $('disconnect').onclick = () => { if (device && device.gatt.connected) device.gatt.disconnect(); };

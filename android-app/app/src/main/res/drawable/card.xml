@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card: 145-deg gradient #202735 -> #1a2029, 1px #2b3442 border, 22 px
+     radius — the web page's .card. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="45"
+              android:startColor="@color/card_a"
+              android:endColor="@color/card_b"/>
+    <corners android:radius="22dp"/>
+    <stroke android:width="1dp" android:color="@color/card_line"/>
+</shape>

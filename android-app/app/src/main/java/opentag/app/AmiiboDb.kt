@@ -59,6 +59,21 @@ class AmiiboDb(assetsJson: String) {
 
     fun lookup(id: String): Meta? = entries[id.lowercase()]
 
+    /** All figures sorted by name — the browsable database. */
+    val all: List<Meta> by lazy { entries.values.sortedBy { it.name } }
+
+    /** Search over name / series / type / game (normalized substring), like
+     *  the web sync page's database section. Empty query = everything. */
+    fun search(query: String, limit: Int): List<Meta> {
+        val q = norm(query)
+        val src = if (q.isEmpty()) all
+                  else all.filter {
+                      norm(it.name).contains(q) || norm(it.series).contains(q) ||
+                      norm(it.type).contains(q) || norm(it.game).contains(q)
+                  }
+        return src.take(limit)
+    }
+
     fun matchFilename(name: String): Meta? {
         val hex = Regex("[0-9a-fA-F]{16}").find(name)?.value
         if (hex != null) lookup(hex)?.let { return it }

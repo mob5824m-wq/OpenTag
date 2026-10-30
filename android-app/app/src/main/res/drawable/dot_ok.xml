@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Connected dot: mint with the soft glow halo (web .dot.ok). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="center" android:width="21dp" android:height="21dp">
+        <shape android:shape="oval">
+            <solid android:color="#4db6f36a"/>
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="9dp" android:height="9dp">
+        <shape android:shape="oval">
+            <solid android:color="@color/mint"/>
+        </shape>
+    </item>
+</layer-list>

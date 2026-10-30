@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Page background: flat #11151c with the soft top-right glow the web sync
+     page has (radial-gradient(800px 500px at 90% -10%, #28334b, transparent)). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/bg"/>
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.92"
+                android:centerY="0.02"
+                android:gradientRadius="430dp"
+                android:startColor="@color/glow"
+                android:endColor="#0028334b"/>
+        </shape>
+    </item>
+</layer-list>

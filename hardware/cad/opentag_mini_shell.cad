@@ -1,0 +1,416 @@
+// ---------------------------------------------------------------------------
+// OpenTag Mini shell — parametric, two printed parts + one button cap.
+//
+//   part = "both" | "front" | "back" | "cap"
+//
+// The screenless compact sibling of opentag_shell.cad: same DevKitC-1 +
+// PN532Killer + TP4056/LiPo power chain, no OLED and no carrier PCB, so the
+// whole OLED/button zone of the handheld case is gone. The result is a slim
+// bar (83.6 x 93.6 x 16.3 mm vs the handheld's 97.6 x 135.6 x 29.3) that is
+// driven entirely from the Android app or the web sync page over BLE.
+//
+// FRONT SHELL : one button hole (OK), USB + power-switch slots (west/east),
+//               charge port + light-pipe bores (east), engraved OPENTAG /
+//               MINI wordmarks, battery clamp rails (the cell is sandwiched
+//               between the DevKitC and these rails through a foam pad),
+//               screw bosses, lanyard tab.
+// BACK PLATE  : DevKitC tray (board slides in, held by three walls + a
+//               centre stop), PN532Killer bay under an OPEN NFC tap window
+//               with an outside controller cradle, battery space above the
+//               DevKitC, TP4056 + MT3608 trays with zip-tie slots in the
+//               south-east, the tactile-switch pedestal, vents, service
+//               window over the DevKitC's BOOT/RST pads.
+//
+// Layout (top view, x west->east, y north->south; +y = tap side / "chin"):
+//   y -45..-35   north rim (screw bosses, lanyard tab, wordmark free zone)
+//   y -35..-7    DevKitC (69.7 x 25.4) in its tray; the 803040 LiPo lies on
+//                top of it (foam pad), clamped by the front shell's rails
+//   y -7..+3     button pedestal + power-switch slot zone (free air)
+//   y +3..+35    PN532Killer bay (42 x 32, antenna down) west, open window
+//   y +3..+38    TP4056 (y 4..21) + MT3608 (y 23..37) trays east
+//   y +38..+45   south rim (screw bosses, cradle + halo)
+//
+// Stack-up (z, from the back plate's inner face):
+//   0 .. 5      DevKitC tray walls; Killer posts 2.4 + board 2.6
+//   ~5 .. 13    the 8 mm cell on its foam pad above the DevKitC
+//   13 .. 14.5  battery clamp rails (printed on the front shell)
+//   14.5        front inner ceiling   (outer depth 16.3)
+//
+// The single tactile switch (6x6x8.5, legs bent flat) is foam-taped to the
+// pedestal top at z 4.2, so its plunger reaches z 12.7 and the printed cap
+// engages it 0.2 mm pre-loaded — the same geometry the handheld uses on its
+// carrier PCB.
+//
+// All dimensions in millimetres. Measure your modules and adjust before
+// printing; every position derives from the parameters below.
+// ---------------------------------------------------------------------------
+
+part = "both";
+$fn = 48;
+
+// ---- shell ------------------------------------------------------------------
+wall        = 1.8;    // general wall
+floor_t     = 1.8;    // back plate
+inner_w     = 80;     // interior width (DevKitC 69.7 + tray + clearance)
+inner_l     = 90;     // interior length (tray + DevKitC + Killer bay)
+inner_d     = 14.5;   // interior depth (tray 5 + cell 8 + rail pre-load)
+corner      = 6;      // exterior corner radius
+outer_w = inner_w + 2*wall;     // 83.6
+outer_l = inner_l + 2*wall;     // 93.6
+outer_d = inner_d + wall;       // 16.3
+
+// screw line: front-shell bosses and back-plate countersinks share these.
+// The corners stay clear of the Killer bay (posts end at y 37.5) and the
+// power trays (walls end at y 38.2).
+screw_dx = inner_w/2 - 3.2;   // 36.8
+screw_dy = outer_l/2 - 4.8;   // 42.2
+
+// ---- DevKitC-1 tray (board slides in west-first, USB at the west wall) ------
+dev_w  = 69.7;                 // board length (along x)
+dev_l  = 25.4;                 // board width (along y)
+dev_cx = 0;
+dev_cy = -21.3;                // board centre; board spans y -34 .. -8.6
+dev_gap   = 0.6;               // board-to-wall clearance
+dev_wall  = 1.2;               // tray wall thickness
+dev_rim   = 5;                 // tray wall height (board sits on the plate)
+// The x-direction tray walls stop short of the north screw bosses; the
+// board's south edge is held by a centre stop between the battery rails.
+dev_stop_w = 6;                // centre south stop width (x)
+
+// ---- battery (803040 cell, on a foam pad above the DevKitC) -----------------
+bat_l = 40;                    // cell length (along y)
+bat_w = 30;                    // cell width (along x)
+bat_t = 8;                     // cell thickness
+bat_cx = 0;
+bat_cy = -12;                  // cell centre; cell spans y -32 .. +8
+// Clamp rails on the front shell press the cell (through its foam pad) onto
+// the DevKitC: rails hang from the ceiling, 1.5 mm thick, with end stops.
+rail_w  = 3;                   // rail width (x), outboard of the cell
+rail_t  = 1.5;                 // rail thickness (z)
+rail_z0 = 13.0;                // rail underside: 0.3 mm squeeze into the pad
+rail_y0 = -33.2;               // end stops hug the cell's ends with 1.2 mm
+rail_y1 = 9.2;                 // of foam-pad allowance (cell: y -32 .. +8)
+
+// ---- PN532Killer bay (42 x 32 board, antenna down, same orientation as
+//      the handheld: kil_l runs along x) --------------------------------------
+kil_l = 42; kil_w = 32;        // board footprint (kil_l along x)
+kil_cx = -14.4; kil_cy = 19;   // board centre: x -35.4..+6.6, y +3..+35
+                                 // (kil_cx keeps the west posts' snap lips
+                                 // 0.5 mm clear of the cavity edge at -40)
+kil_post = 5; kil_lip = 1.6; kil_post_h = 2.4;
+kil_nub = 1.6; kil_nub_h = 2.4;
+tap_win = 30;                  // OPEN window over the antenna (full cut)
+cradle_d = 36; cradle_t = 1.2; // outside cradle recess centred on it
+halo_d = 36; halo_w = 0.5; halo_t = 0.4;   // engraved ring around the cradle
+
+// ---- power trays (south-east column) -----------------------------------------
+tray_wall = 1.2; tray_h = 4;   // module trays: wall thickness / height
+tp_w = 26; tp_d = 17;          // TP4056 module, USB-C at its east edge
+tp_cx = 25; tp_cy = 12.5;      // module centre: x 12..38, y 4..21
+mt_w = 21; mt_d = 14;          // MT3608 boost module
+mt_cx = 25; mt_cy = 30;        // module centre: x 14.5..35.5, y 23..37
+tp_vent_l = 20; mt_vent_l = 14;   // vents through the plate, per tray
+vent_w = 4.2;
+
+// ---- wall slots ----------------------------------------------------------------
+usb_slot_y = dev_cy;              // DevKitC USB-C, west wall
+usb_slot_l = 24; usb_slot_z0 = 0.5; usb_slot_z1 = 4.5;
+sw_slot_y  = -2;                  // battery slide switch, east wall
+sw_slot_l  = 10;  sw_slot_z0 = 4;  sw_slot_z1 = 11;
+chg_slot_y = tp_cy;               // TP4056 USB-C + charge LEDs, east wall
+chg_slot_l = 12; chg_slot_z0 = 0.5; chg_slot_z1 = 4.5;
+
+// charge-status light pipe: a ~5 mm stub of 2.5 mm acrylic rod carries the
+// TP4056's charge LED out through the east wall, north of the charge slot
+// (the shell bore grips the rod at 2.5; the tray-wall bore seats its inner
+// end a touch loose at 2.6).
+lp_d = 2.5;                      // shell-wall bore
+lp_tray_d = 2.6;                 // tray-wall bore
+lp_y = chg_slot_y - chg_slot_l/2 - 1.75;   // bore axis, 1.75 north of slot
+lp_z = 2.5;                      // bore axis height (mid-wall over the tray)
+
+// ---- the button (one 6x6x8.5 tactile on a pedestal) ---------------------------
+btn_x = 28; btn_y = -3;           // pedestal centre (free air south of the
+                                  // DevKitC, east of the battery)
+btn_hole = 6.4;                   // front-shell hole (6 mm switch + clearance)
+btn_post = 8;                     // pedestal footprint (switch foam-taped on
+btn_post_h = 4.2;                 // top; legs bent flat, wired to GPIO1+GND)
+// Printed cap: head rides 0.6 mm proud of the face at rest; a solid skirt
+// slides in the button hole, a flange inside stops it falling out, and a
+// pusher rod rides the switch plunger (top at z 12.7). Press travel 0.5 mm
+// bottomed by the switch itself.
+cap_d = 9; cap_h = 2.2;           // head (visible button)
+cap_proud = 0.6;                  // head bottom above the outer face at rest
+cap_skirt_o = btn_hole - 0.6;     // skirt outer, sliding fit in the hole
+cap_skirt = wall + 2*cap_proud;   // skirt length through the wall
+cap_flange_d = 8; cap_flange_t = 0.8;   // capture flange inside the shell
+cap_push = 2.0;                   // pusher reach below the flange
+cap_push_d = 4.8;                 // pusher rod (overlaps skirt + flange)
+
+// ---- service window over the DevKitC (BOOT/RST pads, west end) ----------------
+svc_w = 24; svc_l = 24; svc_r = 6;
+svc_cx = -24; svc_cy = dev_cy;
+
+// ---- back-plate cutouts --------------------------------------------------------
+// (tap window, cradle, halo, vents and countersinks live in back_plate())
+
+// ---- branding ------------------------------------------------------------------
+// Engraved on the front face over the Killer bay (the "chin", read with the
+// USB/north end up): the same classic 5x7 pixel font (capitals A-Z, 5 column
+// bytes per glyph, bit 0 = top row) as the handheld shell, the OLED firmware
+// and the web preview. Source: Adafruit-GFX glcdfont.c (BSD).
+brand_text  = "OPENTAG";   // 7 glyphs
+brand_px    = 1.2;         // pixel size; cap height = 7 px = 8.4 mm
+brand_depth = 0.6;         // engraving depth into the outer face
+brand_cx = 0; brand_cy = 17;
+mini_text   = "MINI";      // small second line under the wordmark
+mini_px     = 1.0;
+mini_depth  = 0.6;
+mini_cx = 0; mini_cy = 7.5;
+
+// lanyard / keyring loop: a corner tab shared by BOTH halves so the 4.2 mm
+// bore is continuous through the seam. NW corner, outboard of the screw
+// boss (same 0.3 mm relationship as the handheld's SW tab).
+lug_cx = -44.5; lug_cy = -39; lug_w = 9; lug_l = 11; lug_r = 3; lug_hole = 4.2;
+
+brand_font = [
+  ["A", [124, 18, 17, 18, 124]],
+  ["B", [127, 73, 73, 73, 54]],
+  ["C", [62, 65, 65, 65, 34]],
+  ["D", [127, 65, 65, 65, 62]],
+  ["E", [127, 73, 73, 73, 65]],
+  ["F", [127, 9, 9, 9, 1]],
+  ["G", [62, 65, 65, 81, 115]],
+  ["H", [127, 8, 8, 8, 127]],
+  ["I", [0, 65, 127, 65, 0]],
+  ["J", [32, 64, 65, 63, 1]],
+  ["K", [127, 8, 20, 34, 65]],
+  ["L", [127, 64, 64, 64, 64]],
+  ["M", [127, 2, 28, 2, 127]],
+  ["N", [127, 4, 8, 16, 127]],
+  ["O", [62, 65, 65, 65, 62]],
+  ["P", [127, 9, 9, 9, 6]],
+  ["Q", [62, 65, 81, 33, 94]],
+  ["R", [127, 9, 25, 41, 70]],
+  ["S", [38, 73, 73, 73, 50]],
+  ["T", [3, 1, 127, 1, 3]],
+  ["U", [63, 64, 64, 64, 63]],
+  ["V", [31, 32, 64, 32, 31]],
+  ["W", [63, 64, 56, 64, 63]],
+  ["X", [99, 20, 8, 20, 99]],
+  ["Y", [3, 4, 120, 4, 3]],
+  ["Z", [97, 89, 73, 77, 67]]];
+
+module rbox(w, l, h, r) {           // rounded box, centred x/y, base z=0
+  hull() {
+    for (sx = [-1, 1], sy = [-1, 1])
+      translate([sx*(w/2 - r), sy*(l/2 - r), 0]) cylinder(r = r, h = h);
+  }
+}
+
+// Engraved wordmark (same construction as the handheld's brand_mark): laid
+// out in upright text space, then rotated 180 deg about its centre so it
+// reads with the USB/north end up (180 deg from the model's +y axis). Each
+// pixel cube spans z = outer_d - depth .. outer_d + 0.01 (flush floor,
+// overshoot outside the face); pixels are inflated 0.02 mm so diagonal
+// contacts overlap instead of pinching the surface.
+module text_mark(text_str, px, depth, cx, cy) {
+  n = len(text_str);
+  W = (n * 6 - 1) * px;      // wordmark width; height = 8 px
+  for (i = [0 : n - 1]) {
+    ch = text_str[i];
+    if (ch != " " && ord(ch) >= 65 && ord(ch) <= 90)
+      for (c = [0 : 4])
+        for (r = [0 : 7])
+          if (((brand_font[ord(ch) - 65][1][c]) >> r & 1) != 0)
+            translate([cx, cy, 0])
+              rotate([0, 0, 180])
+                translate([-W/2 + (i*6 + c) * px,
+                           -4*px + (6 - r) * px, 0])
+                  cube([px + 0.02, px + 0.02, depth + 0.01]);
+  }
+}
+
+module front_shell() {
+  difference() {
+    rbox(outer_w, outer_l, outer_d, corner);
+    translate([0, 0, -0.01]) rbox(inner_w, inner_l, inner_d + 0.02, max(corner - wall, 1));
+    // the single button hole (top face)
+    translate([btn_x, btn_y, inner_d - 0.01]) cylinder(d = btn_hole, h = wall + 0.02);
+    // DevKit USB slot, west wall
+    translate([-outer_w/2 - 0.01, usb_slot_y - usb_slot_l/2, usb_slot_z0])
+      cube([wall + 0.02, usb_slot_l, usb_slot_z1 - usb_slot_z0]);
+    // power switch slot, east wall
+    translate([inner_w/2 - 0.01, sw_slot_y - sw_slot_l/2, sw_slot_z0])
+      cube([wall + 0.02, sw_slot_l, sw_slot_z1 - sw_slot_z0]);
+    // charge port + charge-LED window, east wall over the TP4056 tray
+    translate([inner_w/2 - 0.01, chg_slot_y - chg_slot_l/2, chg_slot_z0])
+      cube([wall + 0.02, chg_slot_l, chg_slot_z1 - chg_slot_z0]);
+    // charge-status light pipe, same wall just north of the slot
+    translate([inner_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_d, h = wall + 0.02);
+    // engraved wordmarks on the chin
+    translate([0, 0, outer_d - brand_depth])
+      text_mark(brand_text, brand_px, brand_depth, brand_cx, brand_cy);
+    translate([0, 0, outer_d - mini_depth])
+      text_mark(mini_text, mini_px, mini_depth, mini_cx, mini_cy);
+  }
+  // Battery clamp rails + end stops: hang from the ceiling and squeeze the
+  // cell (through its foam pad) onto the DevKitC. The +0.02 fuses the rail
+  // tops into the face — an exact-height rail would print as a loose piece.
+  for (sx = [-1, 1])
+    translate([bat_cx + sx*(bat_w/2 + rail_w/2) - rail_w/2, rail_y0, rail_z0])
+      cube([rail_w, rail_y1 - rail_y0, inner_d - rail_z0 + 0.02]);
+  for (sy = [-1, 1])
+    translate([bat_cx - bat_w/2 - rail_w, sy < 0 ? rail_y0 - 1.2 : rail_y1,
+               rail_z0])
+      cube([bat_w + 2*rail_w, 1.2, inner_d - rail_z0 + 0.02]);
+  // screw bosses (M3 from the back plate)
+  for (x = [-1, 1], y = [-1, 1])
+    translate([x*screw_dx, y*screw_dy, 0])
+      difference() {
+        cylinder(d = 7, h = 10);
+        cylinder(d = 2.8, h = 10);
+      }
+  // lanyard tab, bored through (the back plate carries the matching tab)
+  difference() {
+    translate([lug_cx, lug_cy, 0]) rbox(lug_w, lug_l, outer_d, lug_r);
+    translate([lug_cx, lug_cy, -0.01]) cylinder(d = lug_hole, h = outer_d + 0.02);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BACK PLATE (prints flat-side-down)
+// ---------------------------------------------------------------------------
+module back_plate() {
+  difference() {
+    union() {
+      translate([0, 0, -floor_t]) rbox(outer_w, outer_l, floor_t, corner);
+      // lanyard tab: same footprint as the front shell's, flush at z = 0 so
+      // the bore lines up through the seam
+      translate([lug_cx, lug_cy, -floor_t]) rbox(lug_w, lug_l, floor_t, lug_r);
+      // Mating lip: four segments that slide into the front-shell cavity
+      // with 0.2 mm clearance per side (windows clear the DevKitC tray, the
+      // Killer posts, the power trays and the screw bosses).
+      for (sy = [-1, 1])
+        translate([-(inner_w/2 - 9), sy*(inner_l/2 - 0.2) - (sy < 0 ? 0 : 1.2), -0.01])
+          cube([inner_w - 18, 1.2, 1.8]);
+      translate([inner_w/2 - 1.4, -26, -0.01]) cube([1.2, 26, 1.8]);  // east: y -26..0
+      translate([-inner_w/2 + 0.2, -26, -0.01]) cube([1.2, 26, 1.8]); // west: y -26..0
+      // DevKitC tray: north wall + two x walls (stopping short of the north
+      // bosses) + a centre south stop between the battery rails.
+      translate([dev_cx - dev_w/2 - dev_gap - dev_wall,
+                 dev_cy - dev_l/2 - dev_gap - dev_wall, 0])
+        cube([dev_w + 2*(dev_gap + dev_wall), dev_wall, dev_rim]);
+      for (sx = [-1, 1])
+        translate([dev_cx + sx*(dev_w/2 + dev_gap) - (sx < 0 ? dev_wall : 0),
+                   dev_cy - dev_l/2 - dev_gap, 0])
+          cube([dev_wall, dev_l + 2*dev_gap, dev_rim]);
+      translate([dev_cx - dev_stop_w/2, dev_cy + dev_l/2 + dev_gap, 0])
+        cube([dev_stop_w, dev_wall, dev_rim]);
+      // PN532Killer snap bay (same orientation as the handheld: kil_l along x)
+      for (qx = [-1, 1], qy = [-1, 1]) {
+        px = kil_cx + qx*kil_l/2; py = kil_cy + qy*kil_w/2;
+        translate([px - kil_post/2 - (qx < 0 ? kil_lip : 0),
+                   py - kil_post/2 - (qy < 0 ? kil_lip : 0), 0])
+          cube([kil_post + (qx < 0 ? kil_lip : 0),
+                kil_post + (qy < 0 ? kil_lip : 0), kil_post_h]);
+      }
+      // anti-slide nubs at the Killer board's edge midpoints
+      for (nx = [-1, 1])
+        translate([kil_cx + nx*(kil_l/2 + 0.8) - kil_nub/2, kil_cy - kil_nub/2, 0])
+          cube([kil_nub, kil_nub, kil_nub_h]);
+      for (ny = [-1, 1])
+        translate([kil_cx - kil_nub/2, kil_cy + ny*(kil_w/2 + 0.8) - kil_nub/2, 0])
+          cube([kil_nub, kil_nub, kil_nub_h]);
+      // TP4056 tray: east wall notched behind the charge port so the USB-C
+      // and charge LEDs reach the shell slot; zip-tie slots in both rims.
+      translate([tp_cx - tp_w/2 - tray_wall, tp_cy - tp_d/2 - tray_wall, 0]) {
+        difference() {
+          cube([tp_w + 2*tray_wall, tp_d + 2*tray_wall, tray_h]);
+          translate([-0.01,
+                     chg_slot_y - tp_cy + tp_d/2 + tray_wall - chg_slot_l/2, -0.01])
+            cube([tray_wall + 0.02, chg_slot_l, tray_h + 0.02]);
+        }
+        translate([tray_wall - 0.01, 0, -0.01])
+          cube([tp_w + 0.02, tp_d + 2*tray_wall, 2.02]);   // hollow inside
+        for (yy = [3.5, tp_d + tray_wall - 5.5])
+          translate([7, yy, -0.01]) cube([tp_w + 2*tray_wall - 14, 2.6, 2.02]);
+      }
+      // MT3608 tray, north of the TP4056
+      translate([mt_cx - mt_w/2 - tray_wall, mt_cy - mt_d/2 - tray_wall, 0]) {
+        difference() {
+          cube([mt_w + 2*tray_wall, mt_d + 2*tray_wall, tray_h]);
+          translate([tray_wall - 0.01, tray_wall - 0.01, -0.01])
+            cube([mt_w + 0.02, mt_d + 0.02, tray_h + 0.02]);
+        }
+        for (yy = [3.5, mt_d + tray_wall - 5.5])
+          translate([7, yy, -0.01]) cube([mt_w + 2*tray_wall - 14, 2.6, 2.02]);
+      }
+      // button pedestal: the tactile switch is foam-taped on top (legs bent
+      // flat, wired to GPIO1 + GND on the DevKitC header)
+      translate([btn_x - btn_post/2, btn_y - btn_post/2, 0])
+        cube([btn_post, btn_post, btn_post_h]);
+    }
+    // lanyard bore, through the tab only
+    translate([lug_cx, lug_cy, -floor_t - 0.01])
+      cylinder(d = lug_hole, h = floor_t + 0.02);
+    // light-pipe rod seat through the TP tray's east wall (a wall-local cut
+    // would be refilled by the tray wall's union — overshoot into the gap)
+    translate([tp_cx + tp_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_tray_d, h = tray_wall + 0.02);
+    // NFC tap window: fully OPEN over the antenna — best read range.
+    translate([kil_cx, kil_cy, -floor_t - 0.01])
+      cylinder(d = tap_win, h = floor_t + 0.02);
+    // controller cradle: shallow recess on the outside, centred on the
+    // window, so a controller/phone nests right over the antenna
+    translate([kil_cx, kil_cy, -floor_t - 0.01])
+      cylinder(d = cradle_d, h = cradle_t + 0.01);
+    // service window over the DevKitC's BOOT/RST end
+    translate([svc_cx, svc_cy, -floor_t - 0.01])
+      rbox(svc_w, svc_l, floor_t + 0.02, svc_r);
+    // charger/boost vents through the plate, between each tray's tie bars
+    translate([tp_cx - tp_vent_l/2, tp_cy - vent_w/2, -floor_t - 0.01])
+      cube([tp_vent_l, vent_w, floor_t + 0.02]);
+    translate([mt_cx - mt_vent_l/2, mt_cy - vent_w/2, -floor_t - 0.01])
+      cube([mt_vent_l, vent_w, floor_t + 0.02]);
+    // engraved halo ring around the NFC cradle (tap-zone locator)
+    difference() {
+      translate([kil_cx, kil_cy, -floor_t - 0.01])
+        cylinder(d = halo_d, h = halo_t + 0.01);
+      translate([kil_cx, kil_cy, -floor_t - 0.02])
+        cylinder(d = halo_d - 2*halo_w, h = halo_t + 0.03);
+    }
+    // M3 screw holes, countersunk from the outside
+    for (x = [-1, 1], y = [-1, 1])
+      translate([x*screw_dx, y*screw_dy, 0]) {
+        translate([0, 0, -floor_t - 0.01]) cylinder(d = 3.2, h = floor_t + 0.02);
+        translate([0, 0, -floor_t - 0.01]) cylinder(d1 = 6.4, d2 = 3.2, h = 1.6);
+      }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Button cap (print 1)
+// ---------------------------------------------------------------------------
+module button_cap() {
+  union() {
+    cylinder(d = cap_d, h = cap_h);                 // head, proud of the face
+    translate([0, 0, -cap_skirt]) cylinder(d = cap_skirt_o, h = cap_skirt);
+    translate([0, 0, -cap_skirt - cap_flange_t])
+      cylinder(d = cap_flange_d, h = cap_flange_t); // capture flange
+    translate([0, 0, -cap_skirt - cap_flange_t - cap_push])
+      // pusher rod: reaches 0.4 mm past the flange into the skirt so it
+      // fuses with both (a flush end would only face-touch)
+      cylinder(d = cap_push_d, h = cap_push + cap_flange_t + 0.4);
+  }
+}
+
+if (part == "cap") button_cap();
+if (part == "front") front_shell();
+if (part == "back") back_plate();
+if (part == "both") {
+  front_shell();
+  translate([0, 0, -floor_t - 20]) back_plate();
+  translate([btn_x, btn_y, -30]) button_cap();
+}

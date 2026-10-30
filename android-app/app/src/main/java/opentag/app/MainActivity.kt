@@ -8,6 +8,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
@@ -22,22 +27,35 @@ import java.util.zip.ZipInputStream
 
 class MainActivity : Activity(), BleOpenTag.Listener {
 
-    /** A .bin dump picked from phone storage (or extracted from a .zip). */
-    private class Dump(val name: String, val bytes: ByteArray) {
-        val valid: Boolean = bytes.size in 532..572
+    /** A dump picked from phone storage (loose file or from a .zip). Invalid
+     *  dumps stay in the list — their row shows the reject reason instead of
+     *  an upload chip. Normalization mirrors the web sync page: 532/540/572-
+     *  byte containers (optionally behind a 32-byte N2-style header or with
+     *  trailing junk) become clean 540-byte NTAG215 page images; 1024+ byte
+     *  dumps carrying a v3 figure ID are cut to the first 256 pages and
+     *  flagged V3 · I2C (Kirby Air Riders generation, emulation-only). */
+    private class Dump(val name: String, raw: ByteArray) {
+        val image: ByteArray?       // normalized page image; null = invalid
+        val v3: Boolean
+        val reason: String?         // null = valid
+        val uidHex: String
         val meta: AmiiboDb.Meta? = db?.matchFilename(name)
 
-        fun metaLine(): String {
-            val size = "${bytes.size} B"
-            val m = meta ?: return "$size · no metadata match"
-            return listOf(m.name, m.series, m.type, m.year).filter { it.isNotBlank() }
-                .joinToString(" · ") + " · $size"
+        init {
+            val norm = normalizeDump(raw)
+            image = norm.first
+            v3 = norm.second
+            reason = norm.third
+            uidHex = if (image != null) uidHexOf(image!!) else ""
         }
+
+        val valid: Boolean get() = image != null
     }
 
     private lateinit var ble: BleOpenTag
     private val local = ArrayList<Dump>()
     private val deviceLib = ArrayList<String>()
+    private val keyFiles = ArrayList<Pair<String, ByteArray>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,10 +68,42 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         }
         findViewById<Button>(R.id.disconnect).setOnClickListener { ble.disconnect() }
         findViewById<Button>(R.id.sendNote).setOnClickListener { sendNote() }
+        findViewById<Button>(R.id.clearNote).setOnClickListener { ble.sendCommand("NOTE:CLEAR") }
         findViewById<Button>(R.id.pick).setOnClickListener { pickFiles() }
         findViewById<Button>(R.id.uploadAll).setOnClickListener { uploadAll() }
         findViewById<Button>(R.id.refresh).setOnClickListener { ble.refreshLibrary() }
         findViewById<Button>(R.id.stopEmu).setOnClickListener { ble.sendCommand("STOP") }
+        findViewById<Button>(R.id.writeNote).setOnClickListener { ble.sendCommand("NOTE:WRITE") }
+        findViewById<Button>(R.id.emuNote).setOnClickListener { ble.sendCommand("NOTE:EMU") }
+        findViewById<Button>(R.id.backupTag).setOnClickListener { ble.sendCommand("AMI:BACKUP") }
+        findViewById<Button>(R.id.inspectTag).setOnClickListener { ble.sendCommand("TAG:INSPECT") }
+
+        findViewById<TextView>(R.id.log).movementMethod = ScrollingMovementMethod()
+        findViewById<ListView>(R.id.localList).setEmptyView(findViewById(R.id.localEmpty))
+        findViewById<ListView>(R.id.deviceList).setEmptyView(findViewById(R.id.deviceEmpty))
+
+        // database browser — same data the dump matching uses, no connection
+        findViewById<EditText>(R.id.dbSearch).addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                dbSearchHandler.removeCallbacksAndMessages(null)
+                dbSearchHandler.postDelayed({ renderDb() }, 150)
+            }
+        })
+        renderDb()
+
+        // signing keys (advanced) + Wi-Fi firmware updates
+        findViewById<Button>(R.id.keyPick).setOnClickListener { pickKeyFiles() }
+        findViewById<Button>(R.id.uploadKeys).setOnClickListener { uploadKeyFiles() }
+        findViewById<Button>(R.id.keyStatusBtn).setOnClickListener { ble.sendCommand("KEY:STATUS") }
+        findViewById<Button>(R.id.forgetKeys).setOnClickListener {
+            ble.sendCommand("KEY:CLEAR")
+            findViewById<TextView>(R.id.keyState).text = "Key state: no keys on device"
+        }
+        findViewById<Button>(R.id.wifiSave).setOnClickListener { saveWifi() }
+        findViewById<Button>(R.id.otaCheck).setOnClickListener { ble.sendCommand("OTA:STATUS") }
+        findViewById<Button>(R.id.otaStart).setOnClickListener { ble.sendCommand("OTA:START") }
 
         findViewById<ListView>(R.id.localList).apply {
             adapter = localAdapter
@@ -69,6 +119,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             adapter = deviceAdapter
             setOnItemClickListener { _, _, position, _ -> deviceItemAction(position) }
         }
+        findViewById<ListView>(R.id.dbList).adapter = dbAdapter
         updateButtons()
     }
 
@@ -127,9 +178,19 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         startActivityForResult(intent, REQ_FILES)
     }
 
+    private fun pickKeyFiles() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(intent, REQ_KEYS)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_KEYS) { onActivityResultKeys(resultCode, data); return }
         if (requestCode != REQ_FILES || resultCode != RESULT_OK) return
         val uris = ArrayList<Uri>()
         data?.data?.let { uris.add(it) }
@@ -156,8 +217,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         if (bytes.size >= 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
             return importZip(bytes)
         }
-        addDump(name, bytes)
-        return 1
+        return if (addDump(name, bytes)) 1 else 0
     }
 
     private fun importZip(bytes: ByteArray): Int {
@@ -166,7 +226,10 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             ZipInputStream(bytes.inputStream()).use { zin ->
                 var entry = zin.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory && entry.name.endsWith(".bin", ignoreCase = true)) {
+                    val base = entry.name.substringAfterLast('/')
+                    if (!entry.isDirectory &&
+                        listOf(".bin", ".nfc", ".tag", ".dump")
+                            .any { base.endsWith(it, ignoreCase = true) }) {
                         val out = ByteArrayOutputStream()
                         val buf = ByteArray(4096)
                         while (true) {
@@ -174,9 +237,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
                             if (n < 0) break
                             out.write(buf, 0, n)
                         }
-                        val base = entry.name.substringAfterLast('/')
-                        addDump(base, out.toByteArray())
-                        added++
+                        if (addDump(base, out.toByteArray())) added++
                     }
                     entry = zin.nextEntry
                 }
@@ -187,14 +248,86 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         return added
     }
 
-    private fun addDump(rawName: String, bytes: ByteArray) {
-        val name = sanitizeName(rawName) ?: return
-        if (bytes.size !in 532..572) {
-            log("$name: skipped (${bytes.size} B — not an NTAG215 dump container)")
+    /** Adds (or replaces) one entry; false when the file is unusable. */
+    private fun addDump(rawName: String, bytes: ByteArray): Boolean {
+        val name = sanitizeName(rawName) ?: return false
+        val raw = if (rawName.substringAfterLast('/').endsWith(".nfc", ignoreCase = true)) {
+            parseFlipperNfc(bytes.decodeToString()) ?: run {
+                log("$name: skipped (not a Flipper Zero .nfc file)")
+                return false
+            }
+        } else bytes
+        local.removeAll { it.name == name }
+        local.add(Dump(name, raw))
+        return true
+    }
+
+    // ---- signing keys (advanced) ---------------------------------------------
+
+    /** Stage the picked key files (validated client-side, same check the
+     *  web sync page runs); the Upload keys button sends them. */
+    private fun onActivityResultKeys(resultCode: Int, data: Intent?) {
+        if (resultCode != RESULT_OK) return
+        val uris = ArrayList<Uri>()
+        data?.data?.let { uris.add(it) }
+        data?.clipData?.let { cd ->
+            for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri)
+        }
+        Thread {
+            val picked = ArrayList<Pair<String, ByteArray>>()
+            for (uri in uris) {
+                val name = displayName(uri) ?: "key.bin"
+                try {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
+                    if (keyFileKind(bytes)) picked.add(name to bytes)
+                    else log("$name: not a valid 80/160-byte key file (type string check failed)")
+                } catch (e: Exception) {
+                    log("$name: read failed (${e.message})")
+                }
+            }
+            runOnUiThread {
+                keyFiles.clear()
+                keyFiles.addAll(picked)
+                toast(if (picked.isEmpty()) "No valid key files"
+                      else "${picked.size} key file(s) staged — press Upload keys")
+            }
+        }.start()
+    }
+
+    /** Mirror of the device-side check: 80-byte key files carry their type
+     *  in a 14-byte NUL-terminated string at offset 16; a 160-byte combined
+     *  retail file is two of those back to back. */
+    private fun keyFileKind(bytes: ByteArray): Boolean {
+        if (bytes.size != 80 && bytes.size != 160) return false
+        var off = 0
+        while (off < bytes.size) {
+            val ts = bytes.copyOfRange(off + 16, off + 30).decodeToString()
+            val nul = ts.indexOf('\u0000')
+            if (nul < 0) return false
+            val kind = ts.substring(0, nul)
+            if (kind != "unfixed infos" && kind != "locked secret") return false
+            off += 80
+        }
+        return true
+    }
+
+    private fun uploadKeyFiles() {
+        if (!ble.connected) { toast("Connect to OpenTag first."); return }
+        if (keyFiles.isEmpty()) {
+            toast("Choose your key files first — unfixed-info.bin and locked-secret.bin, or one combined 160-byte retail file.")
             return
         }
-        local.removeAll { it.name == name }
-        local.add(Dump(name, bytes))
+        for ((_, bytes) in keyFiles) ble.uploadKeys(bytes)
+    }
+
+    // ---- Wi-Fi provisioning + OTA --------------------------------------------
+
+    private fun saveWifi() {
+        if (!ble.connected) { toast("Connect to OpenTag first."); return }
+        val ssid = findViewById<EditText>(R.id.wifiSsid).text.toString().trim()
+        val pass = findViewById<EditText>(R.id.wifiPass).text.toString()
+        if (ssid.isEmpty()) { toast("Enter a Wi-Fi name first."); return }
+        ble.sendCommand("WIFI:$ssid|$pass")
     }
 
     private fun displayName(uri: Uri): String? = try {
@@ -221,15 +354,17 @@ class MainActivity : Activity(), BleOpenTag.Listener {
 
     private fun uploadOne(dump: Dump) {
         if (!ble.connected) { toast("Connect to OpenTag first."); return }
-        if (!dump.valid) { toast("${dump.name} is not a valid dump size."); return }
-        ble.uploadDump(dump.name, dump.bytes)
+        val img = dump.image
+        if (img == null) { toast("${dump.name}: ${dump.reason ?: "not a valid dump"}"); return }
+        ble.uploadDump(dump.name, img)
     }
 
     private fun uploadAll() {
         if (!ble.connected) { toast("Connect to OpenTag first."); return }
         var n = 0
         for (d in local) {
-            if (d.valid) { ble.uploadDump(d.name, d.bytes); n++ }
+            val img = d.image
+            if (img != null) { ble.uploadDump(d.name, img); n++ }
         }
         if (n == 0) toast("Nothing valid to upload.")
     }
@@ -241,13 +376,16 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         val name = deviceLib[position]
         val meta = db?.matchFilename(name)
         val title = meta?.let { "${it.name} (${it.series})" } ?: name
-        val options = arrayOf("Emulate on OpenTag", "Delete from device")
+        val options = arrayOf("Emulate on OpenTag", "Write to NTAG215 (needs keys)",
+                               "Toggle random UID", "Delete from device")
         AlertDialog.Builder(this)
             .setTitle(title)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> ble.sendCommand("AMI:EMU:$name")
-                    1 -> ble.sendCommand("AMI:DEL:$name")
+                    1 -> ble.sendCommand("AMI:WRITE:$name")
+                    2 -> ble.sendCommand("AMI:RAND:$name")
+                    3 -> ble.sendCommand("AMI:DEL:$name")
                 }
             }
             .show()
@@ -259,9 +397,21 @@ class MainActivity : Activity(), BleOpenTag.Listener {
 
     override fun onState(connected: Boolean) {
         updateButtons()
+        findViewById<TextView>(R.id.stateText).text =
+            if (connected) "Connected" else "Not connected"
+        findViewById<View>(R.id.stateDot).setBackgroundResource(
+            if (connected) R.drawable.dot_ok else R.drawable.dot)
+        val info = findViewById<TextView>(R.id.deviceInfo)
         if (connected) {
+            // differentiate the two device types: the screenless Mini has
+            // no OLED and pairs without a PIN
+            info.text = if (ble.isMini) "OpenTag Mini · screenless · no pairing PIN"
+                        else "OpenTag · OLED handheld"
+            ble.sendCommand("INFO")   // model + battery + charge state
             ble.refreshLibrary()
             ble.sendCommand("KEY:STATUS")
+        } else {
+            info.text = "Bluetooth LE · works with OpenTag and OpenTag Mini"
         }
     }
 
@@ -272,25 +422,81 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     }
 
     override fun onUploadDone(name: String, ok: Boolean) {
-        if (ok) ble.refreshLibrary()
+        if (name == "keys") {
+            if (ok) ble.sendCommand("KEY:STATUS")
+        } else if (ok) {
+            ble.refreshLibrary()
+        }
+    }
+
+    override fun onStatus(line: String) {
+        when {
+            line.startsWith("OK:info:") -> {
+                // "OK:info:<standard|mini>:<millivolts>:<charging 0/1>"
+                val parts = line.split(":")
+                if (parts.size >= 5) {
+                    val model = if (parts[2] == "mini" || ble.isMini) "OpenTag Mini · screenless"
+                                else "OpenTag · OLED handheld"
+                    val mv = parts[3].toIntOrNull() ?: 0
+                    var text = model
+                    if (mv > 0) {
+                        val pct = ((mv / 1000.0f - 3.30f) / 0.80f * 100).toInt().coerceIn(0, 100)
+                        text += " · battery $pct%"
+                    }
+                    if (parts[4] == "1") text += " · charging"
+                    findViewById<TextView>(R.id.deviceInfo).text = text
+                }
+            }
+            line.startsWith("OK:backup:") ->
+                ble.refreshLibrary()   // the dumped entry just landed
+            line.startsWith("OK:keys:") ->
+                findViewById<TextView>(R.id.keyState).text =
+                    if (line.contains("ready"))
+                        "Key state: ready — both key files loaded, writes enabled"
+                    else
+                        "Key state: missing or partial — upload both unfixed-info.bin and locked-secret.bin"
+            line.startsWith("OK:keys-cleared") ->
+                findViewById<TextView>(R.id.keyState).text = "Key state: no keys on device"
+        }
     }
 
     // ---- UI helpers ------------------------------------------------------------
 
     private fun log(line: String) {
-        val v = findViewById<TextView>(R.id.log)
-        val text = v.text.toString()
-        v.text = (text.split('\n').takeLast(200) + line).joinToString("\n")
+        // import runs on a background thread; BleOpenTag posts on main —
+        // runOnUiThread covers both (immediate when already on main)
+        runOnUiThread {
+            val v = findViewById<TextView>(R.id.log)
+            val text = v.text.toString()
+            v.text = (text.split('\n').takeLast(200) + line).joinToString("\n")
+        }
     }
 
     private fun toast(msg: String) = runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
 
     private fun updateButtons() {
         val on = ble.connected
-        for (id in intArrayOf(R.id.disconnect, R.id.sendNote, R.id.uploadAll, R.id.refresh, R.id.stopEmu))
+        for (id in intArrayOf(R.id.disconnect, R.id.sendNote, R.id.clearNote,
+                               R.id.writeNote, R.id.emuNote,
+                               R.id.uploadAll, R.id.refresh, R.id.stopEmu,
+                               R.id.backupTag, R.id.inspectTag,
+                               R.id.uploadKeys, R.id.keyStatusBtn, R.id.forgetKeys,
+                               R.id.wifiSave, R.id.otaCheck, R.id.otaStart))
             findViewById<Button>(id).isEnabled = on
         findViewById<Button>(R.id.connect).isEnabled = !on
     }
+
+    /** Binds the outline chip on a row (NTAG215 / V3 · I2C / INVALID / BIN). */
+    private fun bindTag(v: View, text: String, bg: Int, color: Int) {
+        val tag = v.findViewById<TextView>(R.id.tag)
+        tag.text = text
+        tag.setBackgroundResource(bg)
+        tag.setTextColor(getColor(color))
+        tag.visibility = View.VISIBLE
+    }
+
+    private fun metaLine(m: AmiiboDb.Meta): String =
+        listOf(m.name, m.series, m.type, m.year).filter { it.isNotBlank() }.joinToString(" · ")
 
     private inner class LocalAdapter : BaseAdapter() {
         override fun getCount() = local.size
@@ -300,9 +506,17 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             val v = convertView ?: layoutInflater.inflate(R.layout.item_amiibo, parent, false)
             val d = local[position]
             v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, d.meta) }
-            v.findViewById<TextView>(R.id.title).text =
-                (if (d.valid) "" else "\u26A0 ") + d.name
-            v.findViewById<TextView>(R.id.meta).text = d.metaLine()
+            v.findViewById<TextView>(R.id.title).text = d.name
+            v.findViewById<TextView>(R.id.meta).text = d.meta?.let { metaLine(it) } ?: "no metadata match"
+            val img = d.image
+            v.findViewById<TextView>(R.id.sub).text =
+                if (img != null) "${img.size} B · UID ${d.uidHex}"
+                else (d.reason ?: "rejected")
+            if (d.valid)
+                bindTag(v, if (d.v3) "V3 · I2C" else "NTAG215",
+                        R.drawable.tag_mint, R.color.mint)
+            else
+                bindTag(v, "INVALID", R.drawable.tag_bad, R.color.bad)
             return v
         }
     }
@@ -317,19 +531,135 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             val meta = db?.matchFilename(name)
             v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, meta) }
             v.findViewById<TextView>(R.id.title).text = name
-            v.findViewById<TextView>(R.id.meta).text = meta?.let {
-                listOf(it.name, it.series, it.type, it.year).filter { x -> x.isNotBlank() }.joinToString(" · ")
-            } ?: "no metadata match"
+            v.findViewById<TextView>(R.id.meta).text = meta?.let { metaLine(it) } ?: "no metadata match"
+            v.findViewById<TextView>(R.id.sub).visibility = View.GONE
+            bindTag(v, "BIN", R.drawable.tag_violet, R.color.violet)
+            return v
+        }
+    }
+
+    private inner class DbAdapter : BaseAdapter() {
+        private var rows: List<AmiiboDb.Meta> = emptyList()
+        fun setRows(list: List<AmiiboDb.Meta>) { rows = list; notifyDataSetChanged() }
+        override fun getCount() = rows.size
+        override fun getItem(position: Int) = rows[position]
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val v = convertView ?: layoutInflater.inflate(R.layout.item_amiibo, parent, false)
+            val m = rows[position]
+            v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, m) }
+            v.findViewById<TextView>(R.id.title).text = m.name
+            v.findViewById<TextView>(R.id.meta).text =
+                listOf(m.series, m.type, m.year).filter { it.isNotBlank() }.joinToString(" · ")
+            v.findViewById<TextView>(R.id.sub).visibility = View.GONE
+            v.findViewById<TextView>(R.id.tag).visibility = View.GONE
             return v
         }
     }
 
     private val localAdapter = LocalAdapter()
     private val deviceAdapter = DeviceAdapter()
+    private val dbAdapter = DbAdapter()
+
+    // ---- database browser ------------------------------------------------------
+
+    private val dbSearchHandler = Handler(Looper.getMainLooper())
+
+    private fun renderDb() {
+        val d = db ?: return
+        val rows = d.search(findViewById<EditText>(R.id.dbSearch).text.toString(), DB_LIMIT)
+        dbAdapter.setRows(rows)
+        findViewById<TextView>(R.id.dbCount).text =
+            if (rows.size >= DB_LIMIT)
+                "showing the first $DB_LIMIT matches of ${d.size} amiibo — keep typing to narrow it down"
+            else
+                "${rows.size} of ${d.size} amiibo"
+    }
 
     companion object {
         private const val REQ_PERMS = 1
         private const val REQ_FILES = 2
+        private const val REQ_KEYS = 3
+        private const val DB_LIMIT = 120   // rows kept in the list at once
         private var db: AmiiboDb? = null
+
+        // ---- dump intake (ported from the web sync page's JS) --------------
+
+        /** Structural check of a candidate NTAG215 page image; null = OK. */
+        private fun structuralCheck(b: ByteArray): String? {
+            if (b.size < 532) return "too short"
+            var blankUid = true
+            for (i in 0..7) if (b[i] != 0.toByte()) { blankUid = false; break }
+            if (blankUid) return "blank UID (data-only export)"
+            if (((0x88 xor b[0].toInt() xor b[1].toInt() xor b[2].toInt()) and 0xFF)
+                != (b[3].toInt() and 0xFF)) return "UID checksum mismatch"
+            if (b[0] != 0x04.toByte()) return "not an NXP tag UID"
+            if (b[12] != 0xE1.toByte() || b[13] != 0x10.toByte() || b[14] != 0x3E.toByte())
+                return "not an NTAG215 tag"
+            return null
+        }
+
+        /** v3 (Kirby Air Riders generation) check: NXP UID byte plus the
+         *  figure-ID format byte at 0x5B; the v2 UID checksum is not required. */
+        private fun v3Check(b: ByteArray): String? {
+            if (b.size < 1024) return "too short for v3"
+            if (b[0] != 0x04.toByte()) return "not an NXP tag UID"
+            if (b[0x5B] != 0x03.toByte()) return "not a v3 figure ID"
+            return null
+        }
+
+        /** (image, v3, reason). 532/540/572-byte containers normalize to a
+         *  clean 540-byte page image (trying offset 0 and a 32-byte N2-style
+         *  header); 1024+ byte v3 dumps are cut to the first 256 pages. */
+        private fun normalizeDump(bytes: ByteArray): Triple<ByteArray?, Boolean, String?> {
+            if (bytes.size >= 1024 && v3Check(bytes) == null)
+                return Triple(bytes.copyOf(1024), true, null)
+            if (bytes.size < 532) return Triple(null, false, "too short")
+            val candidates = if (bytes.size >= 564) intArrayOf(0, 32) else intArrayOf(0)
+            for (off in candidates) {
+                val end = minOf(bytes.size, off + 540)
+                if (end - off < 532) continue
+                val slice = bytes.copyOfRange(off, end)
+                if (structuralCheck(slice) != null) continue
+                val image = ByteArray(540)
+                System.arraycopy(slice, 0, image, 0, slice.size)
+                return Triple(image, false, null)
+            }
+            val head = bytes.copyOfRange(0, minOf(bytes.size, 540))
+            return Triple(null, false, structuralCheck(head) ?: "unrecognized layout")
+        }
+
+        /** Flipper Zero .nfc text ("Page N: aa bb cc dd" lines); v3 exports
+         *  carry pages past 134 and build a 1024-byte image. */
+        private fun parseFlipperNfc(text: String): ByteArray? {
+            if (!Regex("Page\\s+\\d+\\s*:", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
+            val pages = arrayOfNulls<ByteArray>(256)
+            var maxPage = 0
+            val re = Regex("^Page\\s+(\\d+)\\s*:\\s*([0-9a-fA-F ]*)$",
+                           setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE))
+            for (m in re.findAll(text)) {
+                val n = m.groupValues[1].toIntOrNull() ?: return null
+                if (n > 255) return null
+                val parts = m.groupValues[2].trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                if (parts.isEmpty()) continue
+                val byteVals = parts.map { it.toIntOrNull(16) }
+                if (byteVals.size != 4 || byteVals.any { it == null }) return null
+                val pb = ByteArray(4)
+                for (i in 0..3) pb[i] = byteVals[i]!!.toByte()
+                pages[n] = pb
+                if (n > maxPage) maxPage = n
+            }
+            if (pages[0] == null) return null
+            val v3 = maxPage > 134
+            val image = ByteArray(if (v3) 1024 else 540)
+            for (n in 0..maxPage) pages[n]?.let { System.arraycopy(it, 0, image, n * 4, 4) }
+            return image
+        }
+
+        /** UID with the BCC byte elided: 04:D4:… (matches the web page). */
+        private fun uidHexOf(b: ByteArray): String {
+            val uid = b.sliceArray(0..2) + b.sliceArray(4..7)
+            return uid.joinToString(":") { String.format("%02X", it.toInt() and 0xFF) }
+        }
     }
 }

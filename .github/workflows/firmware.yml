@@ -1,15 +1,26 @@
-# Builds the OpenTag firmware with PlatformIO and attaches firmware.bin to a
-# GitHub release, so `tools/update_opentag.py` can grab the latest image and
-# flash only the app partition (amiibo library untouched).
+# Builds both OpenTag firmwares with PlatformIO and attaches them to a
+# GitHub release, so `tools/update_opentag.py` and the devices' own Wi-Fi OTA
+# can grab the latest images and flash only the app partition (amiibo
+# library untouched).
+#
+#   opentag-firmware-<tag>.bin       the handheld (OLED + 4 buttons)
+#   opentag-mini-firmware-<tag>.bin  the screenless compact build
 #
 # Triggers:
-#   * push of a v* tag  -> creates a release with the firmware attached
+#   * push of a v* tag  -> creates a release with both firmwares attached
+#   * pull request / push touching device/ -> compile gate only
+#     (fast host-native unit + syntax checks first, then full PlatformIO
+#      builds of both firmwares — no release steps)
 #   * workflow_dispatch -> build-only check
 name: firmware
 
 on:
   push:
+    branches: ['**']
+    paths: ['device/**', '.github/workflows/firmware.yml']
     tags: ['v*']
+  pull_request:
+    paths: ['device/**', '.github/workflows/firmware.yml']
   workflow_dispatch:
 
 permissions:
@@ -24,6 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Host-native unit tests + syntax gates
+        run: |
+          cd test
+          g++ -std=c++11 -Wall -Wextra -pedantic -I ../src test_ntag215_emu.cpp -o t1 && ./t1
+          g++ -std=c++11 -Wall -Wextra -pedantic -I host_stubs -I ../src test_pn532_uart.cpp -o t2 && ./t2
+          g++ -std=c++11 -Wall -Wextra -pedantic -I ../src test_amiibo_crypto.cpp -o t3 && ./t3
+          g++ -std=c++11 -Wall -Wextra -fsyntax-only -I host_stubs_main -I ../src ../src/main.cpp
+          g++ -std=c++11 -Wall -Wextra -fsyntax-only -I host_stubs_main -I ../src ../src/mini/main.cpp
+          echo "host gates OK (handheld + mini)"
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -31,21 +52,27 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build firmware
+      - name: Build handheld firmware (opentag_s3)
         run: pio run -e opentag_s3
 
-      - name: Upload build artifact
+      - name: Build screenless firmware (opentag_mini)
+        run: pio run -e opentag_mini
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: device/.pio/build/opentag_s3/firmware.bin
+          path: |
+            device/.pio/build/opentag_s3/firmware.bin
+            device/.pio/build/opentag_mini/firmware.bin
 
-      - name: Attach firmware.bin to release
+      - name: Attach both firmwares to release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           cp .pio/build/opentag_s3/firmware.bin "opentag-firmware-${TAG}.bin"
+          cp .pio/build/opentag_mini/firmware.bin "opentag-mini-firmware-${TAG}.bin"
           gh release create "$TAG" --title "OpenTag $TAG" --generate-notes --repo "$GITHUB_REPOSITORY" || true
-          gh release upload "$TAG" "opentag-firmware-${TAG}.bin" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" "opentag-firmware-${TAG}.bin" "opentag-mini-firmware-${TAG}.bin" --clobber --repo "$GITHUB_REPOSITORY"
