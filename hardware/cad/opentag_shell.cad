@@ -1,0 +1,586 @@
+// ---------------------------------------------------------------------------
+// OpenTag handheld shell — parametric, two printed parts + button caps.
+//
+//   part = "both" | "front" | "back" | "stand"
+//
+// DESK STAND : flat-printed rest for the assembled device — base, tall rear
+//               panel (the device leans on its top edge), brace and front
+//               lip. The brace's front face carries the engraved OPENTAG
+//               wordmark, and the panel's back face carries an engraved
+//               ring + bolt marking where to stick a 5 V Qi transmitter
+//               coil so the docked device charges in its stand.
+// FRONT SHELL : rectangular OLED window, four button holes (UP/DOWN/OK/BACK),
+//               USB + power-switch slots, screw bosses.
+// BACK PLATE  : carrier-PCB standoffs + mid-span button posts, PN532Killer
+//               bay under an OPEN NFC tap window with an outside controller
+//               cradle, LiPo bay with retainers, power-module tray with
+//               vents, service window over the DevKitC.
+//
+// Stack-up (z, from the back plate's inner face):
+//   0 .. 14    under-PCB gap: female headers (8.5) + DevKitC board +
+//              components (USB ~3.2 mm deep)
+//   14 .. 15.6  carrier PCB
+//   15.6 .. 26.1 OLED module on its 1x7 female header, buttons (~8.5 tall)
+//   27.5       front inner wall
+//
+// The DevKitC (69.7 x 25.4) hangs under the middle of the carrier; the
+// PN532Killer, battery and power modules live in the south bay where nothing
+// sits above them. Tap zone = lower-left of the back: the plate is cut fully
+// OPEN over the Killer's antenna (zero plastic = best range) and a shallow
+// outside cradle rings the opening so a controller or phone nests centred
+// on it.
+//
+// All dimensions in millimetres. Measure your modules and adjust before
+// printing; every position derives from the parameters below.
+// ---------------------------------------------------------------------------
+
+part = "both";
+$fn = 48;
+
+// ---- shell ------------------------------------------------------------------
+wall        = 1.8;    // general wall (slim; PETG or PLA both fine)
+floor_t     = 1.8;    // back plate
+inner_w     = 94;     // interior width (carrier PCB is 90 wide)
+inner_l     = 132;    // interior length (PCB zone + south bay)
+inner_d     = 27.5;   // interior depth (OLED top 26.1 + 1.4 clearance)
+corner      = 8;      // exterior corner radius
+outer_w = inner_w + 2*wall;     // 97.6 - shell envelope (stand + docs use it)
+outer_l = inner_l + 2*wall;     // 135.6
+outer_d = inner_d + wall;       // 29.3 - front shell depth incl. back plate
+
+// ---- carrier PCB (90 x 60, holes at ±41.5 / ±25.5) ---------------------------
+pcb_w = 90; pcb_l = 60; pcb_t = 1.6;
+north_gap = 6;
+pcb_y = -inner_l/2 + north_gap + pcb_l/2;   // PCB centre line
+standoff_h = 14;                            // plate -> PCB underside
+pcb_hole_dx = 41.5; pcb_hole_dy = 25.5;
+
+// ---- OLED (1.3" SSD1351 module ~37.5 x 34.5) --------------------------------
+oled_win_w = 28;               // rectangular window; display area is ~26.9
+oled_win_l = 28;
+oled_win_r = 2;                // window corner radius
+oled_bezel = 1.2;              // outward chamfer on the outside face
+oled_cx    = -1.38;            // module centre, from the carrier layout
+oled_cy    = pcb_y - 6;
+oled_mod_h = 10.5;             // header (8.5) + module PCB
+
+// ---- buttons (carrier y = +17) ------------------------------------------------
+btn_dy  = pcb_y + 17;
+btn_dx  = 16.5;                  // -24.75 / -8.25 / +8.25 / +24.75 (UP DOWN OK BACK)
+btn_hole = 6.4;                  // 6 mm tactile + clearance
+// Printed cap: head rides 0.6 mm proud of the face at rest; a solid skirt
+// slides in the button hole, a flange inside stops it falling out, and a
+// pusher rod rides the switch plunger (~8.5 mm tall switch, plunger top at
+// z 24.1), reaching up into the skirt so every part of the cap connects.
+// Press travel 0.5 mm bottomed by the switch itself.
+cap_d = 9; cap_h = 2.2;          // head (visible button)
+cap_proud = 0.6;                 // head bottom above the outer face at rest
+cap_skirt_o = btn_hole - 0.6;    // skirt outer, sliding fit in the hole
+cap_skirt = wall + 2*cap_proud;  // skirt length through the wall
+cap_flange_d = 8; cap_flange_t = 0.8;   // capture flange inside the shell
+cap_push = 2.0;                  // pusher reach below the flange
+cap_push_d = 4.8;                // pusher rod (overlaps skirt + flange)
+
+// ---- DevKitC edge details --------------------------------------------------------
+usb_slot_y = pcb_y;              // both USB ports, west end of the DevKit
+usb_slot_l = 24; usb_slot_z0 = 0.5; usb_slot_z1 = 4.5;
+sw_slot_y  = pcb_y + 14.5;       // power toggle, right wall
+sw_slot_l  = 10;  sw_slot_z0 = 15; sw_slot_z1 = 24;
+
+// ---- south bay (nothing above it) -------------------------------------------------
+bay_y0 = pcb_y + pcb_l/2 + 2;    // = 2
+// PN532Killer bay — MEASURE YOUR BOARD (default ~42 x 32). The board rests
+// antenna-side-down on the four corner posts, close under the open tap
+// window; four edge nubs stop it sliding on the posts.
+kil_l = 42; kil_w = 32; kil_t = 2.6;
+kil_cx = -21.5; kil_cy = bay_y0 + 19;      // west post edge -46.6, clear of the front wall (-47)
+kil_post = 5; kil_lip = 1.6; kil_post_h = 2.4;
+kil_nub = 1.6; kil_nub_h = 2.4;
+tap_win = 30;                   // OPEN window over the antenna (full cut)
+cradle_d = 40; cradle_t = 1.2;  // outside cradle recess centred on it
+// battery bay (default 805040: 50 long x 40 wide x 8 thick, lying flat).
+// bat_w is the cell width + 0.6 clearance — bay + battery + retainer must
+// fit the 94 mm interior side by side.
+bat_l = 52; bat_w = 40.6; bat_t = 9;
+bat_cx = 23; bat_cy = bay_y0 + 30;  // west edge 2.7 clears the bay posts, heel clears the NE boss
+// power module tray (TP4056 ~26x17, MT3608 ~21x14, side by side)
+tray_cx = -23; tray_cy = bay_y0 + 45.5; tray_w = 47; tray_d = 18;
+vent_l = 26; vent_w = 4.2;      // charger/boost vent through the plate,
+                                // centred between the tie-down bars
+// charging port + indicator, west wall over the tray's west end: the
+// TP4056 seats USB-C-west and its charge LEDs peek through the same slot
+// (the tray's west wall is notched behind it — see back_plate()).
+chg_slot_y = tray_cy;            // centred on the TP4056's USB-C
+chg_slot_l = 12; chg_slot_z0 = 0.5; chg_slot_z1 = 4.5;
+bolt_px = 1.0; bolt_depth = 0.6; // engraved lightning bolt, 6 x 8 px
+bolt_cy = chg_slot_y; bolt_z0 = 6;
+bolt_cols = [0, 136, 76, 110, 59, 25];  // column bytes, bit 0 = top row
+// charge-status light pipe: a ~5 mm stub of 2.5 mm acrylic light-pipe
+// rod carries the TP4056's charge LED out through the west face, just
+// south of the charge slot (the shell bore grips the rod at 2.5; the
+// tray-wall bore seats its inner end a touch loose at 2.6). lp_y is on
+// the LED — nudge it to match your module before printing.
+lp_d = 2.5;                     // shell-wall bore (light grip on the rod)
+lp_tray_d = 2.6;                // tray-wall bore (loose seat, LED cone)
+lp_y = chg_slot_y - chg_slot_l/2 - 1.75;   // bore axis, 1.75 south of the slot
+lp_z = 2.5;                     // bore axis height (mid-wall over the tray)
+// lanyard / keyring loop: a corner tab shared by BOTH halves so the 4.2 mm
+// bore is continuous through the seam. SW corner (same side as the charge
+// port, clear of it and of the bolt), outboard of the screw boss.
+lug_cx = -51.5; lug_cy = 60; lug_w = 9; lug_l = 11; lug_r = 3; lug_hole = 4.2;
+
+// ---- desk stand (optional print) ------------------------------------------
+// The device leans back stand_theta from vertical with the screen facing
+// up-forward (readable while docked): OLED end down at the lip, chin up at
+// the panel. It rests on exactly three contacts, all closed by the same
+// relation. With shell thickness t = outer_d and the lip catching the
+// screen face at its top-rear corner:
+//   sin(theta) = lip_h / t          (theta = asin(5/29.3) = 9.82 deg)
+//   * back face on the panel's TOP EDGE at z = base_t + panel_h (below it
+//     the back face clears the panel wall, by panel_h*tan(theta) at the base)
+//   * screen face on the lip's top-rear corner (y_lip_rear, base_t + lip_h)
+//   * the OLED-end face's bottom-rear corner lands on the base top at
+//     y_b0 = panel_front - panel_h*tan(theta) = 35.8
+// The charge port (west wall, chin end) ends up high, just behind the panel
+// top edge, so the device still charges while docked with the cable dropped
+// behind the stand. cad_to_stl.py re-checks all of this with a docked-shell
+// interference gate.
+stand_w = 112;                  // 97.6 shell + finger room each side
+stand_base_d = 66.8; stand_base_t = 2.4; stand_base_r = 3;
+stand_front_y = -10.4;          // base front edge (14.9 mm scoop before the lip)
+stand_panel_t = 2.4; stand_panel_h = 105; stand_panel_r = 1;
+stand_panel_front = 54;         // panel front face (y); top edge z = 107.4
+stand_lip_t = 2.4; stand_lip_h = 5; stand_lip_r = 1;
+stand_theta = asin(stand_lip_h / outer_d);   // 9.82 deg lean from vertical
+stand_lip_front = stand_panel_front
+                - (stand_panel_h - stand_lip_h) * tan(stand_theta)
+                - outer_d / cos(stand_theta) - stand_lip_t;  // 4.54
+stand_brace_d = 4; stand_brace_h = 48;    // slim gusset under the panel's
+                                // lower front (keeps the thin panel
+                                // printable; the docked device clears it)
+stand_brace_ov = 0.5;           // brace fuses 0.5 mm into the panel (a
+                                // face-touching union leaves coincident faces)
+// stand branding / charging mark (both engraved on vertical faces, printable
+// as drawn: the grooves are <= 1.55 mm wide and <= 0.6 mm deep)
+stand_mark_px = 1.5;            // wordmark pixel size on the brace front
+stand_mark_depth = 0.6;         // engraved into the brace's front face
+stand_qi_d = 44.5; stand_qi_w = 0.5; stand_qi_t = 0.4;
+                                // transmitter locator ring, halo-style
+stand_qi_bolt_px = 2.0; stand_qi_bolt_depth = 0.6;
+                                // 6x8 px bolt at the ring centre
+stand_qi_cx = 23;               // ring centre: under the docked device's
+stand_qi_cz = 84;               // receiver coil, as far up the 105 mm panel
+                                // as a 44.5 ring fits (top edge z = 107.4)
+
+// ---- back-plate cutouts / supports ------------------------------------------------
+svc_w = 56; svc_l = 30;         // service window over the DevKitC: reach the
+svc_cy = -32; svc_r = 6;        // BOOT/RST pads, and shed 3+ cm3 of plastic
+
+
+// ---- branding ------------------------------------------------------------------
+// Engraved wordmark on the front chin (south of the buttons) and a halo ring
+// around the NFC cradle on the back. The wordmark uses the same classic 5x7
+// pixel font (capitals A-Z, 5 column bytes per glyph, bit 0 = top row) as
+// the OLED firmware, the web preview and the PCB silkscreen — source:
+// Adafruit-GFX glcdfont.c (BSD). It reads correctly when the device is held
+// with the OLED at the top, which is 180 degrees from the model's +y axis,
+// so the text is laid out rotated in model space.
+brand_text  = "OPENTAG";   // engraved on the front chin (A-Z, blanks skip)
+brand_px    = 1.7;         // pixel size; cap height = 7 px = 11.9 mm
+brand_depth = 0.6;         // engraving depth into the outer face
+brand_cx = 0; brand_cy = 20;   // wordmark centre on the front face
+halo_d = 44.5; halo_w = 0.5; halo_t = 0.4;   // engraved ring around the cradle
+// wireless charging (optional): a Qi receiver coil (<= 40 mm, ferrite-
+// backed) sits on the back plate UNDER the battery, and an engraved ring
+// + bolt mark the pad spot. It lives east of the halo on purpose: metal
+// near the Killer's antenna costs read range.
+qi_ring_d = 44.5; qi_ring_w = 0.5; qi_ring_t = 0.4;  // locator ring, halo-style
+qi_bolt_px = 2.0; qi_bolt_depth = 0.6;               // 6x8 px bolt, centred
+
+brand_font = [
+  ["A", [124, 18, 17, 18, 124]],
+  ["B", [127, 73, 73, 73, 54]],
+  ["C", [62, 65, 65, 65, 34]],
+  ["D", [127, 65, 65, 65, 62]],
+  ["E", [127, 73, 73, 73, 65]],
+  ["F", [127, 9, 9, 9, 1]],
+  ["G", [62, 65, 65, 81, 115]],
+  ["H", [127, 8, 8, 8, 127]],
+  ["I", [0, 65, 127, 65, 0]],
+  ["J", [32, 64, 65, 63, 1]],
+  ["K", [127, 8, 20, 34, 65]],
+  ["L", [127, 64, 64, 64, 64]],
+  ["M", [127, 2, 28, 2, 127]],
+  ["N", [127, 4, 8, 16, 127]],
+  ["O", [62, 65, 65, 65, 62]],
+  ["P", [127, 9, 9, 9, 6]],
+  ["Q", [62, 65, 81, 33, 94]],
+  ["R", [127, 9, 25, 41, 70]],
+  ["S", [38, 73, 73, 73, 50]],
+  ["T", [3, 1, 127, 1, 3]],
+  ["U", [63, 64, 64, 64, 63]],
+  ["V", [31, 32, 64, 32, 31]],
+  ["W", [63, 64, 56, 64, 63]],
+  ["X", [99, 20, 8, 20, 99]],
+  ["Y", [3, 4, 120, 4, 3]],
+  ["Z", [97, 89, 73, 77, 67]]];
+
+// ---- derived ----------------------------------------------------------------------
+oled_top = standoff_h + pcb_t + oled_mod_h;
+// screw line: front-shell bosses and back-plate countersinks share these.
+// screw_dx fuses the d7 boss ~1.2 mm into the corner wall; screw_dy keeps
+// 0.6 mm clearance to the PCB standoffs (+/-41.5, -55.5/-4.5, r 3.75) and
+// keeps boss + countersink inside the plate's r8 rounded corner.
+screw_dx = inner_w/2 - 3.2;   // 43.8
+screw_dy = outer_l/2 - 4.8;   // 63.0
+
+module rbox(w, l, h, r) {           // rounded box, centred x/y, base z=0
+  hull() for (x = [-1, 1], y = [-1, 1])
+    translate([x*(w/2 - r), y*(l/2 - r), 0]) cylinder(r = r, h = h);
+}
+
+// Engraved pixel wordmark, centred on (brand_cx, brand_cy). Cubes span
+// z = 0 .. brand_depth + 0.01 (the caller shifts them to the outer face);
+// laid out rotated 180 deg in model space so it reads with the OLED at top.
+// Pixels are inflated by 0.02 mm so diagonally-touching glyph pixels
+// overlap instead of meeting along a single pinched edge (which would make
+// a non-manifold vertical edge in the engraved surface).
+module brand_mark() {
+  n = len(brand_text);
+  W = (n * 6 - 1) * brand_px;      // wordmark width; height = 8 px
+  for (i = [0 : n - 1]) {
+    ch = brand_text[i];
+    if (ch != " " && ord(ch) >= 65 && ord(ch) <= 90)
+      for (c = [0 : 4])
+        for (r = [0 : 7])
+          if (((brand_font[ord(ch) - 65][1][c]) >> r & 1) != 0)
+            translate([brand_cx, brand_cy, 0])
+              rotate([0, 0, 180])
+                translate([-W/2 + (i*6 + c) * brand_px,
+                           -4*brand_px + (6 - r) * brand_px, 0])
+                  cube([brand_px + 0.02, brand_px + 0.02, brand_depth + 0.01]);
+  }
+}
+
+// Engraved lightning bolt on the west face above the charge port — the
+// "charge here" marking. Laid out for a viewer looking at the west face
+// (up = +z, right = -y), engraved bolt_depth into the outer wall. Pixels
+// are inflated by 0.02 mm like the wordmark so diagonal contacts overlap
+// instead of pinching the surface.
+module bolt_mark() {
+  for (c = [0 : 5])
+    for (r = [0 : 7])
+      if (((bolt_cols[c]) >> r & 1) != 0)
+        translate([-outer_w/2 - 0.01,
+                   bolt_cy + (2.5 - c) * bolt_px - 0.01,
+                   bolt_z0 + (7 - r) * bolt_px - 0.01])
+          cube([bolt_depth + 0.01, bolt_px + 0.02, bolt_px + 0.02]);
+}
+
+// ---------------------------------------------------------------------------
+// FRONT SHELL (prints face-down)
+// ---------------------------------------------------------------------------
+module front_shell() {
+  difference() {
+    rbox(outer_w, outer_l, outer_d, corner);
+    translate([0, 0, -0.01]) rbox(inner_w, inner_l, inner_d + 0.02, max(corner - wall, 1));
+    // rectangular OLED window, chamfered bezel outward (top face)
+    hull() {
+      translate([oled_cx, oled_cy, inner_d - 0.01])
+        rbox(oled_win_w, oled_win_l, 0.02, oled_win_r);
+      translate([oled_cx, oled_cy, outer_d])
+        rbox(oled_win_w + 2*oled_bezel, oled_win_l + 2*oled_bezel, 0.02,
+             oled_win_r + oled_bezel);
+    }
+    // button holes (UP DOWN OK BACK, west -> east)
+    for (x = [-1.5*btn_dx, -0.5*btn_dx, 0.5*btn_dx, 1.5*btn_dx])
+      translate([x, btn_dy, inner_d - 0.01]) cylinder(d = btn_hole, h = wall + 0.02);
+    // DevKit USB slot, left wall
+    translate([-outer_w/2 - 0.01, usb_slot_y - usb_slot_l/2, usb_slot_z0])
+      cube([wall + 0.02, usb_slot_l, usb_slot_z1 - usb_slot_z0]);
+    // power switch slot, right wall
+    translate([inner_w/2 - 0.01, sw_slot_y - sw_slot_l/2, sw_slot_z0])
+      cube([wall + 0.02, sw_slot_l, sw_slot_z1 - sw_slot_z0]);
+    // charge port + charge-LED window, left wall over the power tray
+    translate([-outer_w/2 - 0.01, chg_slot_y - chg_slot_l/2, chg_slot_z0])
+      cube([wall + 0.02, chg_slot_l, chg_slot_z1 - chg_slot_z0]);
+    // charge-status light pipe, same wall just south of the slot
+    translate([-outer_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_d, h = wall + 0.02);
+    // engraved wordmark on the chin (cut from the outer face inward)
+    translate([0, 0, outer_d - brand_depth]) brand_mark();
+    // engraved lightning bolt on the west face above the charge port
+    bolt_mark();
+  }
+  // OLED side rails: clamp the module against the carrier socket. The
+  // +0.02 fuses the rail tops into the face — an exact-height rail ends
+  // 0.01 mm short of the ceiling (the cavity cut overshoots) and the
+  // rails would print as loose pieces.
+  for (sx = [-1, 1])
+    translate([oled_cx + sx*(37.5/2 + 0.8) - 0.8, oled_cy - 34.5/2, oled_top])
+      cube([1.6, 34.5, inner_d - oled_top + 0.02]);
+  // screw bosses (M3 from the back plate; d7 clears the PCB standoffs)
+  for (x = [-1, 1], y = [-1, 1])
+    translate([x*screw_dx, y*screw_dy, 0])
+      difference() {
+        cylinder(d = 7, h = 10);
+        cylinder(d = 2.8, h = 10);
+      }
+  // lanyard tab, bored through (the back plate carries the matching tab)
+  difference() {
+    translate([lug_cx, lug_cy, 0]) rbox(lug_w, lug_l, outer_d, lug_r);
+    translate([lug_cx, lug_cy, -0.01]) cylinder(d = lug_hole, h = outer_d + 0.02);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BACK PLATE (prints flat-side-down)
+// ---------------------------------------------------------------------------
+module back_plate() {
+  difference() {
+    union() {
+      translate([0, 0, -floor_t]) rbox(outer_w, outer_l, floor_t, corner);
+      // lanyard tab: same footprint as the front shell's, flush at z = 0 so
+      // the bore lines up through the seam
+      translate([lug_cx, lug_cy, -floor_t]) rbox(lug_w, lug_l, floor_t, lug_r);
+      // Mating lip: four segments that slide into the front-shell cavity
+      // with 0.2 mm clearance per side. A full perimeter ring does NOT
+      // fit: the ring would have to be under inner_w x inner_l to enter
+      // the cavity, and at any width it crosses the killer-bay posts,
+      // the battery retainers and the screw bosses. Segment windows:
+      // west clears the killer posts (y 1..7.5 and 34.5..39.5), east
+      // clears the battery retainer (y 6..58) and the corner bosses,
+      // north/south stop short of the bosses (x +/- 39.4).
+      for (sy = [-1, 1])
+        translate([-(inner_w/2 - 9), sy*(inner_l/2 - 0.2) - (sy < 0 ? 0 : 1.2), -0.01])
+          cube([inner_w - 18, 1.2, 1.8]);
+      translate([inner_w/2 - 1.4, -57, -0.01]) cube([1.2, 61, 1.8]);   // east: y -57..4
+      translate([-inner_w/2 + 0.2, 10, -0.01]) cube([1.2, 23, 1.8]);    // west: y 10..33
+      // PCB standoffs (M3, screws from the top through the PCB)
+      for (x = [-1, 1], y = [-1, 1])
+        translate([x*pcb_hole_dx, pcb_y + y*pcb_hole_dy, 0])
+          difference() {
+            cylinder(d = 7.5, h = standoff_h);
+            translate([0, 0, standoff_h - 5.5]) cylinder(d = 2.8, h = 6);
+          }
+      // Button-load posts: pressing the buttons leverages the carrier on
+      // its four corner standoffs; two posts under the button row carry
+      // the load straight into the back plate instead.
+      for (px = [-14, 14])
+        translate([px - 4, btn_dy - 2, 0]) cube([8, 4, standoff_h]);
+      // PN532Killer snap bay
+      for (qx = [-1, 1], qy = [-1, 1]) {
+        px = kil_cx + qx*kil_l/2; py = kil_cy + qy*kil_w/2;
+        translate([px - kil_post/2 - (qx < 0 ? kil_lip : 0),
+                   py - kil_post/2 - (qy < 0 ? kil_lip : 0), 0])
+          cube([kil_post + (qx < 0 ? kil_lip : 0),
+                kil_post + (qy < 0 ? kil_lip : 0), kil_post_h]);
+      }
+      // anti-slide nubs at the Killer board's edge midpoints
+      for (nx = [-1, 1])
+        translate([kil_cx + nx*(kil_l/2 + 0.8) - kil_nub/2, kil_cy - kil_nub/2, 0])
+          cube([kil_nub, kil_nub, kil_nub_h]);
+      for (ny = [-1, 1])
+        translate([kil_cx - kil_nub/2, kil_cy + ny*(kil_w/2 + 0.8) - kil_nub/2, 0])
+          cube([kil_nub, kil_nub, kil_nub_h]);
+      // battery retainers: two side lips + toe + heel
+      for (sx = [-1, 1])
+        translate([bat_cx + sx*bat_w/2 - (sx < 0 ? 3 : 0),
+                   bat_cy - bat_l/2, 0]) cube([3, bat_l, 7]);
+      translate([bat_cx - bat_w/2 - 3, bat_cy - bat_l/2 - 3, 0])
+        cube([bat_w + 6, 3, 5]);
+      // Heel stops ~1.5 mm short of the battery's east edge so it clears
+      // the NE screw boss; the east side lip retains that corner of the
+      // battery instead.
+      translate([bat_cx - bat_w/2 - 3, bat_cy + bat_l/2, 0])
+        cube([bat_w - 1, 3, 5]);
+      // power module tray with zip-tie slots
+      translate([tray_cx - tray_w/2, tray_cy - tray_d/2, 0]) {
+        // west wall notched behind the charge port so the TP4056's USB-C
+        // and charge LEDs reach the shell slot (the mx = 0 side)
+        difference() {
+          cube([2, tray_d, 5]);
+          translate([-0.01,
+                     chg_slot_y - tray_cy + tray_d/2 - chg_slot_l/2, -0.01])
+            cube([2.02, chg_slot_l, 5.02]);
+        }
+        translate([tray_w - 2, 0, 0]) cube([2, tray_d, 5]);
+        for (my = [0, 1]) translate([0, my*(tray_d - 2), 0]) cube([tray_w, 2, 5]);
+        for (yy = [3.5, tray_d - 6])
+          translate([7, yy, -0.01]) cube([tray_w - 14, 2.6, 2.02]);
+      }
+    }
+    // lanyard bore, through the tab only (overshoots into the front tab's
+    // own bore region, never into solid material)
+    translate([lug_cx, lug_cy, -floor_t - 0.01])
+      cylinder(d = lug_hole, h = floor_t + 0.02);
+    // light-pipe rod seat through the tray's west wall + SW corner (a
+    // wall-local cut would be refilled by the south tray wall's union)
+    translate([tray_cx - tray_w/2 - 0.01, lp_y, lp_z]) rotate([0, 90, 0])
+      cylinder(d = lp_tray_d, h = 2.02);
+    // NFC tap window: fully OPEN over the antenna — best read range.
+    translate([kil_cx, kil_cy, -floor_t - 0.01])
+      cylinder(d = tap_win, h = floor_t + 0.02);
+    // controller cradle: shallow recess on the outside, centred on the
+    // window, so a controller/phone nests right over the antenna
+    translate([kil_cx, kil_cy, -floor_t - 0.01])
+      cylinder(d = cradle_d, h = cradle_t + 0.01);
+    // service window over the DevKitC (see the BOOT/RST pads through it)
+    translate([0, svc_cy, -floor_t - 0.01])
+      rbox(svc_w, svc_l, floor_t + 0.02, svc_r);
+    // charger/boost vent through the plate, between the tray's tie-down bars
+    translate([tray_cx - vent_l/2, tray_cy - vent_w/2, -floor_t - 0.01])
+      cube([vent_l, vent_w, floor_t + 0.02]);
+    // engraved halo ring around the NFC cradle (tap-zone locator)
+    difference() {
+      translate([kil_cx, kil_cy, -floor_t - 0.01])
+        cylinder(d = halo_d, h = halo_t + 0.01);
+      translate([kil_cx, kil_cy, -floor_t - 0.02])
+        cylinder(d = halo_d - 2*halo_w, h = halo_t + 0.03);
+    }
+    // wireless-charge locator ring around the coil zone (under the battery)
+    difference() {
+      translate([bat_cx, bat_cy, -floor_t - 0.01])
+        cylinder(d = qi_ring_d, h = qi_ring_t + 0.01);
+      translate([bat_cx, bat_cy, -floor_t - 0.02])
+        cylinder(d = qi_ring_d - 2*qi_ring_w, h = qi_ring_t + 0.03);
+    }
+    // centred charge bolt: the same 6x8 pixel icon as the west-face
+    // engraving, 2 mm pixels, viewed from outside the back
+    for (c = [0:5], r = [0:7])
+      if (((bolt_cols[c]) >> r & 1) != 0)
+        translate([bat_cx + (2.5 - c)*qi_bolt_px - 0.01,
+                   bat_cy + (3.5 - r)*qi_bolt_px - 0.01,
+                   -floor_t - 0.01])
+          cube([qi_bolt_px + 0.02, qi_bolt_px + 0.02, qi_bolt_depth + 0.01]);
+    // M3 screw holes, countersunk from the outside
+    for (x = [-1, 1], y = [-1, 1])
+      translate([x*screw_dx, y*screw_dy, 0]) {
+        translate([0, 0, -floor_t - 0.01]) cylinder(d = 3.2, h = floor_t + 0.02);
+        translate([0, 0, -floor_t - 0.01]) cylinder(d1 = 6.4, d2 = 3.2, h = 1.6);
+      }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Button caps (print 4)
+// ---------------------------------------------------------------------------
+module button_cap() {
+  union() {
+    cylinder(d = cap_d, h = cap_h);                 // head, proud of the face
+    translate([0, 0, -cap_skirt]) cylinder(d = cap_skirt_o, h = cap_skirt);
+    translate([0, 0, -cap_skirt - cap_flange_t])
+      cylinder(d = cap_flange_d, h = cap_flange_t); // capture flange
+    translate([0, 0, -cap_skirt - cap_flange_t - cap_push])
+      // pusher rod: reaches 0.4 mm past the flange into the skirt so it
+      // fuses with both (a flush end would only face-touch)
+      cylinder(d = cap_push_d, h = cap_push + cap_flange_t + 0.4);
+  }
+}
+
+module assembly_front() { front_shell(); }
+
+// ---------------------------------------------------------------------------
+// DESK STAND (prints flat on the base; no supports needed)
+// ---------------------------------------------------------------------------
+// Engraved wordmark on the stand brace's front face (plane y = 50). For a
+// viewer standing in front of the dock (looking +y): up = +z, right = +x,
+// so glyph columns advance +x and bit 0 is the top row — no mirroring.
+// Cubes span y = face - 0.01 .. face + depth (floor flush at full depth,
+// 0.01 overshoot outside the face). Pixels are inflated by 0.02 mm like
+// brand_mark() so corner-touching glyph pixels overlap instead of
+// pinching the surface.
+module stand_wordmark() {
+  n = len(brand_text);
+  W = (n * 6 - 1) * stand_mark_px;      // wordmark width; caps 7 px tall
+  zb = stand_base_t + (stand_brace_h - 7 * stand_mark_px) / 2;
+  for (i = [0 : n - 1]) {
+    ch = brand_text[i];
+    if (ch != " " && ord(ch) >= 65 && ord(ch) <= 90)
+      for (c = [0 : 4])
+        for (r = [0 : 7])
+          if (((brand_font[ord(ch) - 65][1][c]) >> r & 1) != 0)
+            translate([-W/2 + (i*6 + c) * stand_mark_px - 0.01,
+                       stand_panel_front - stand_brace_d - 0.01,
+                       zb + (6 - r) * stand_mark_px - 0.01])
+              cube([stand_mark_px + 0.02, stand_mark_depth + 0.01,
+                    stand_mark_px + 0.02]);
+  }
+}
+
+// Engraved Qi-transmitter locator on the stand panel's BACK face (plane
+// y = 56.4): a halo-style ring + centred bolt, laid out for a viewer
+// BEHIND the dock (looking -y: up = +z, right = -x), so the bolt's glyph
+// columns advance -x. Stick a 5 V Qi transmitter coil (<= 40 mm,
+// ferrite-backed) on this mark and the docked device charges in its
+// stand. The ring is centred under the docked receiver as far up the
+// panel as it fits; the 9.82 deg lean still offsets the coils, so expect
+// a gentle charge rate rather than full power.
+module stand_qi_mark() {
+  pb = stand_panel_front + stand_panel_t;      // panel back face (y)
+  // ring groove: outer disc cut stand_qi_t deep, inner disc 0.02 deeper
+  // so the two groove floors never land coincident (same trick as the
+  // halo/qi rings on the device's back plate)
+  translate([stand_qi_cx, pb - stand_qi_t, stand_qi_cz])
+    rotate([-90, 0, 0]) cylinder(d = stand_qi_d, h = stand_qi_t + 0.01);
+  translate([stand_qi_cx, pb - stand_qi_t - 0.02, stand_qi_cz])
+    rotate([-90, 0, 0])
+      cylinder(d = stand_qi_d - 2*stand_qi_w, h = stand_qi_t + 0.03);
+  // centred bolt, bit 0 = top row, columns advance -x
+  for (c = [0 : 5])
+    for (r = [0 : 7])
+      if ((bolt_cols[c] >> r & 1) != 0)
+        translate([stand_qi_cx + (2.5 - c) * stand_qi_bolt_px - 0.01,
+                   pb - stand_qi_bolt_depth,
+                   stand_qi_cz + (3.5 - r) * stand_qi_bolt_px - 0.01])
+          cube([stand_qi_bolt_px + 0.02, stand_qi_bolt_depth + 0.01,
+                stand_qi_bolt_px + 0.02]);
+}
+
+module desk_stand() {
+  difference() {
+    union() {
+    // base: rear edge flush with the panel's back face
+    translate([0, stand_front_y + stand_base_d/2, 0])
+      rbox(stand_w, stand_base_d, stand_base_t, stand_base_r);
+    // back panel: the docked device's back face rests on its top edge
+    // (z = base_t + panel_h = 107.4; the charge port ends up just behind it)
+    translate([0, stand_panel_front + stand_panel_t/2, stand_base_t])
+      rbox(stand_w, stand_panel_t, stand_panel_h, stand_panel_r);
+    // brace: slim gusset tying the panel's lower front to the base (also
+    // keeps the thin panel printable); at the 9.82 deg lean the docked
+    // device's back plane clears its front face by ~6 mm at the brace top
+    translate([-stand_w/2, stand_panel_front - stand_brace_d, stand_base_t])
+      cube([stand_w, stand_brace_d + stand_brace_ov, stand_brace_h]);
+    // front lip: its top-rear corner catches the docked device's screen face
+    translate([0, stand_lip_front + stand_lip_t/2, stand_base_t])
+      rbox(stand_w, stand_lip_t, stand_lip_h, stand_lip_r);
+    }
+    // branding + Qi-transmitter locator
+    stand_wordmark();
+    stand_qi_mark();
+  }
+}
+
+if (part == "stand") desk_stand();
+if (part == "front") assembly_front();
+if (part == "back") back_plate();
+if (part == "both") {
+  translate([-outer_w/2 - 14, 0, outer_d]) rotate([180, 0, 0]) assembly_front();
+  translate([outer_w/2 + 14, 0, 0]) back_plate();
+  for (i = [-1.5, -0.5, 0.5, 1.5])
+    translate([i*15, outer_l/2 + 12, 0]) button_cap();
+}
+
+// Print notes:
+//  * front shell: face down; the OLED rails and bosses need no supports.
+//  * back plate : flat side down; post feet and tray walls are printable
+//    as drawn (all overhangs are short bridges).
+//  * desk stand : flat on its base; the thin panel is tied to the base by
+//    the brace, so no supports are needed. The wordmark on the brace and
+//    the Qi ring + bolt on the panel's back are shallow vertical-face
+//    grooves (<= 1.55 mm wide, <= 0.6 mm deep) — printable as drawn.
+//  * Use PLA/PETG; keep carbon- or metal-filled filaments away from the NFC
+//    tap zone. Verify the killer bay size against your PN532Killer PCB, the
+//    button-cap pusher length against your switch height (~8.5 mm assumed),
+//    and the USB slot position against your DevKitC revision before printing.
