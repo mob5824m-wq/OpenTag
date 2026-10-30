@@ -619,6 +619,310 @@
                 android:overScrollMode="never"/>
         </LinearLayout>
 
+        <!-- ======================= signing keys ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Amiibo signing keys"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="(advanced)"
+                    android:textSize="12sp"
+                    android:textColor="@color/muted"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="OpenTag emulates amiibo — no physical tag writing needed. These keys are only for the optional advanced flow that survives on the device (long-press in its library writes to a real NTAG215, TagMo-style, using your unfixed-info.bin and locked-secret.bin). A combined 160-byte retail key file also works. Files are identified by their embedded type string, stored in the device\u2019s NVS, and never bundled with this project or sent anywhere else."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="15dp">
+
+                <Button
+                    android:id="@+id/keyPick"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Choose key .bin files"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"/>
+
+                <Button
+                    android:id="@+id/uploadKeys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Upload keys"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/keyStatusBtn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Check status"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/forgetKeys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Forget keys"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/keyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Key state: unknown — connect and check"
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Only use key files you legally extracted yourself. Uploading them is your responsibility."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/warn"/>
+        </LinearLayout>
+
+        <!-- ======================= firmware updates ======================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Firmware updates over Wi-Fi"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/text"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Save your Wi-Fi credentials once, then update the OpenTag without a computer: it fetches the newest firmware release from GitHub, flashes only the app partition and reboots — your amiibo library, keys and note survive every update. Credentials live in the device\u2019s settings and are only used for updates. The wired one-command updater (tools/update_opentag.py) keeps working without any of this."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:text="Wi-Fi name (SSID)"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/wifiSsid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="MyNetwork"
+                android:inputType="text"
+                android:maxLength="32"
+                android:maxLines="1"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Password"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/muted"/>
+
+            <EditText
+                android:id="@+id/wifiPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/input"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:textSize="14sp"
+                android:textColor="@color/text"
+                android:hint="••••••••"
+                android:inputType="textPassword"
+                android:maxLength="64"
+                android:maxLines="1"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="15dp">
+
+                <Button
+                    android:id="@+id/wifiSave"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_mint"
+                    android:text="Save Wi-Fi"
+                    android:textColor="@color/mint_dark"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/otaCheck"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Check status"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+
+                <Button
+                    android:id="@+id/otaStart"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_secondary"
+                    android:text="Update now"
+                    android:textColor="@color/text"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textAllCaps="false"
+                    android:stateListAnimator="@null"
+                    android:minHeight="0dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:enabled="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Updating needs battery or a charger connected — a power loss during flashing falls back to the previous app on the next boot, but finishing an update is nicer. Progress shows on the OLED; BACK on the device cancels."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/warn"/>
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

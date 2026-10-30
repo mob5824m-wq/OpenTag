@@ -7,7 +7,16 @@ of the [web sync page](../device/web-sync/index.html) — same dark
 mint/violet design, cards, status dot, log console and amiibo database —
 built entirely from platform views and shape drawables (no WebView, no
 libraries). A scroll-capture-style preview of the screen is in
-[`app-ui-preview.png`](app-ui-preview.png) next to this file.
+[`app-ui-preview.png`](app-ui-preview.png) next to this file
+(regenerate with `python3 tools/render_app_preview.py`).
+
+The launcher icon is the OpenTag mark — a mint ring (the "O") with a
+violet tag dot seated in its notch — drawn full-bleed as an adaptive icon
+(color background + foreground + Android 13+ monochrome layers, so it
+fills whatever shape the launcher masks instead of sitting in a square),
+with legacy PNG rasters for Android 5–7. The geometry lives in
+[`tools/build_icon.py`](../tools/build_icon.py); the web sync page's
+header uses the same mark as an inline SVG.
 
 ## What it does
 
@@ -36,6 +45,16 @@ libraries). A scroll-capture-style preview of the screen is in
 - **NDEF note**: send a text/URL note to the device, or clear the device's
   stored note remotely (`NOTE:CLEAR`, the same command the device menu
   runs).
+- **Amiibo signing keys** (advanced): pick your `unfixed-info.bin` /
+  `locked-secret.bin` (or one combined 160-byte retail file — files are
+  identified by their embedded type string), upload them over the same
+  chunked BLE stream, check the device's key state, or forget them
+  (`KEY:PUT` / `KEY:STATUS` / `KEY:CLEAR`). Keys live in the device's NVS
+  and enable the on-device TagMo-style write flow.
+- **Firmware updates over Wi-Fi**: save Wi-Fi credentials
+  (`WIFI:<ssid>|<pass>`), check that they're stored (`OTA:STATUS`), and
+  start an over-the-air update (`OTA:START`) — the device fetches the
+  newest firmware release from GitHub and flashes only the app partition.
 - Live status log of every BLE notification.
 
 The amiibo ID *inside* a retail dump is AES-encrypted, which is why matching

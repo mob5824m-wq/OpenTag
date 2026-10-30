@@ -38,9 +38,17 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
         fun onState(connected: Boolean)
         fun onDeviceList(names: List<String>)
         fun onUploadDone(name: String, ok: Boolean)
+        /** Every status notification from the device (OK:/ERR: lines),
+         *  delivered on the main thread — for live card state. */
+        fun onStatus(line: String)
     }
 
     private enum class Phase { IDLE, WAIT_PUT_OK, STREAM, WAIT_SAVED }
+
+    /** One queued transfer: the control command that starts it, the status
+     *  line that clears it for streaming, and the one that ends it. */
+    private class Upload(val label: String, val bytes: ByteArray,
+                         val startCmd: String, val putOk: String, val savedOk: String)
 
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
@@ -53,10 +61,9 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
     private val ctrlQueue = ArrayDeque<String>()
     private var ctrlBusy = false
 
-    private val uploadQueue = ArrayDeque<Pair<String, ByteArray>>()
+    private val uploadQueue = ArrayDeque<Upload>()
     private var phase = Phase.IDLE
-    private var streamName = ""
-    private var streamBytes = ByteArray(0)
+    private var current: Upload? = null
     private var streamOff = 0
     private var streamSeq = 0
     private var watchdog: Runnable? = null
@@ -262,22 +269,33 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
 
     /** Queues a dump upload; [Listener.onUploadDone] reports the result. */
     fun uploadDump(name: String, bytes: ByteArray) {
+        queueUpload(Upload(name, bytes, "AMI:PUT:$name:${bytes.size}",
+                           "OK:ami-put", "OK:ami-saved"))
+    }
+
+    /** Queues a key-file upload (80/160-byte unfixed-info / locked-secret /
+     *  combined retail file, same chunked DATA stream as dumps).
+     *  [Listener.onUploadDone] reports the result with label "keys". */
+    fun uploadKeys(bytes: ByteArray) {
+        queueUpload(Upload("keys", bytes, "KEY:PUT:${bytes.size}",
+                           "OK:key-put", "OK:keys-"))
+    }
+
+    private fun queueUpload(u: Upload) {
         synchronized(lock) {
-            uploadQueue.add(name to bytes)
+            uploadQueue.add(u)
             if (phase == Phase.IDLE) startNextUploadLocked()
         }
     }
 
     private fun startNextUploadLocked() {
         val next = uploadQueue.peekFirst() ?: return
-        streamName = next.first
-        streamBytes = next.second
+        current = next
         streamOff = 0
         streamSeq = 0
         phase = Phase.WAIT_PUT_OK
         armWatchdog()
-        val cmd = "AMI:PUT:$streamName:${streamBytes.size}"
-        ctrlQueue.add(cmd)
+        ctrlQueue.add(next.startCmd)
         pumpCtrlLocked()
     }
 
@@ -285,13 +303,14 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
     private fun pumpStream() {
         synchronized(lock) {
             val ch = dataChar ?: return finishUpload(false, "data characteristic gone")
-            if (streamOff >= streamBytes.size) return  // waiting for OK:ami-saved
-            val n = minOf(CHUNK, streamBytes.size - streamOff)
+            val up = current ?: return finishUpload(false, "no upload")
+            if (streamOff >= up.bytes.size) return  // waiting for the saved line
+            val n = minOf(CHUNK, up.bytes.size - streamOff)
             val frame = ByteArray(3 + n)
             frame[0] = ((streamSeq shr 8) and 0xFF).toByte()
             frame[1] = (streamSeq and 0xFF).toByte()
             frame[2] = n.toByte()
-            System.arraycopy(streamBytes, streamOff, frame, 3, n)
+            System.arraycopy(up.bytes, streamOff, frame, 3, n)
             if (Build.VERSION.SDK_INT >= 33) {
                 gatt?.writeCharacteristic(ch, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
                     ?: return finishUpload(false, "disconnected")
@@ -314,9 +333,9 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
             phase = Phase.IDLE
             cancelWatchdog()
         }
-        if (!ok) log("Upload of $streamName failed: $why")
-        val name = streamName
-        main.post { listener.onUploadDone(name, ok) }
+        val label = current?.label ?: "?"
+        if (!ok) log("Upload of $label failed: $why")
+        main.post { listener.onUploadDone(label, ok) }
         synchronized(lock) { if (phase == Phase.IDLE) startNextUploadLocked() }
     }
 
@@ -340,6 +359,7 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
 
     private fun handleNotify(text: String) {
         log(text)
+        main.post { listener.onStatus(text) }
         if (text.startsWith("ERR")) {
             synchronized(lock) {
                 if (phase == Phase.WAIT_PUT_OK || phase == Phase.STREAM || phase == Phase.WAIT_SAVED) {
@@ -360,15 +380,18 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
             return
         }
         synchronized(lock) {
-            when {
-                phase == Phase.WAIT_PUT_OK && text.startsWith("OK:ami-put") -> {
-                    phase = Phase.STREAM
-                    pumpStream()
+            val up = current
+            if (up != null) {
+                when {
+                    phase == Phase.WAIT_PUT_OK && text.startsWith(up.putOk) -> {
+                        phase = Phase.STREAM
+                        pumpStream()
+                    }
+                    phase == Phase.WAIT_SAVED && text.startsWith(up.savedOk) -> {
+                        finishUpload(true, "")
+                    }
+                    else -> {}
                 }
-                phase == Phase.WAIT_SAVED && text.startsWith("OK:ami-saved") -> {
-                    finishUpload(true, "")
-                }
-                else -> {}
             }
         }
     }

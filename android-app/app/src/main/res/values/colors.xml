@@ -26,4 +26,6 @@
     <color name="log_line">#232c39</color>
     <color name="log_text">#a8b4c6</color>
     <color name="dot_idle">#697789</color>
+    <!-- Launcher: full-bleed adaptive-icon background (tools/build_icon.py) -->
+    <color name="icon_background">#11151c</color>
 </resources>

@@ -55,6 +55,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     private lateinit var ble: BleOpenTag
     private val local = ArrayList<Dump>()
     private val deviceLib = ArrayList<String>()
+    private val keyFiles = ArrayList<Pair<String, ByteArray>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +88,18 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             }
         })
         renderDb()
+
+        // signing keys (advanced) + Wi-Fi firmware updates
+        findViewById<Button>(R.id.keyPick).setOnClickListener { pickKeyFiles() }
+        findViewById<Button>(R.id.uploadKeys).setOnClickListener { uploadKeyFiles() }
+        findViewById<Button>(R.id.keyStatusBtn).setOnClickListener { ble.sendCommand("KEY:STATUS") }
+        findViewById<Button>(R.id.forgetKeys).setOnClickListener {
+            ble.sendCommand("KEY:CLEAR")
+            findViewById<TextView>(R.id.keyState).text = "Key state: no keys on device"
+        }
+        findViewById<Button>(R.id.wifiSave).setOnClickListener { saveWifi() }
+        findViewById<Button>(R.id.otaCheck).setOnClickListener { ble.sendCommand("OTA:STATUS") }
+        findViewById<Button>(R.id.otaStart).setOnClickListener { ble.sendCommand("OTA:START") }
 
         findViewById<ListView>(R.id.localList).apply {
             adapter = localAdapter
@@ -161,9 +174,19 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         startActivityForResult(intent, REQ_FILES)
     }
 
+    private fun pickKeyFiles() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(intent, REQ_KEYS)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_KEYS) { onActivityResultKeys(resultCode, data); return }
         if (requestCode != REQ_FILES || resultCode != RESULT_OK) return
         val uris = ArrayList<Uri>()
         data?.data?.let { uris.add(it) }
@@ -233,6 +256,74 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         local.removeAll { it.name == name }
         local.add(Dump(name, raw))
         return true
+    }
+
+    // ---- signing keys (advanced) ---------------------------------------------
+
+    /** Stage the picked key files (validated client-side, same check the
+     *  web sync page runs); the Upload keys button sends them. */
+    private fun onActivityResultKeys(resultCode: Int, data: Intent?) {
+        if (resultCode != RESULT_OK) return
+        val uris = ArrayList<Uri>()
+        data?.data?.let { uris.add(it) }
+        data?.clipData?.let { cd ->
+            for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri)
+        }
+        Thread {
+            val picked = ArrayList<Pair<String, ByteArray>>()
+            for (uri in uris) {
+                val name = displayName(uri) ?: "key.bin"
+                try {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
+                    if (keyFileKind(bytes)) picked.add(name to bytes)
+                    else log("$name: not a valid 80/160-byte key file (type string check failed)")
+                } catch (e: Exception) {
+                    log("$name: read failed (${e.message})")
+                }
+            }
+            runOnUiThread {
+                keyFiles.clear()
+                keyFiles.addAll(picked)
+                toast(if (picked.isEmpty()) "No valid key files"
+                      else "${picked.size} key file(s) staged — press Upload keys")
+            }
+        }.start()
+    }
+
+    /** Mirror of the device-side check: 80-byte key files carry their type
+     *  in a 14-byte NUL-terminated string at offset 16; a 160-byte combined
+     *  retail file is two of those back to back. */
+    private fun keyFileKind(bytes: ByteArray): Boolean {
+        if (bytes.size != 80 && bytes.size != 160) return false
+        var off = 0
+        while (off < bytes.size) {
+            val ts = bytes.copyOfRange(off + 16, off + 30).decodeToString()
+            val nul = ts.indexOf('\u0000')
+            if (nul < 0) return false
+            val kind = ts.substring(0, nul)
+            if (kind != "unfixed infos" && kind != "locked secret") return false
+            off += 80
+        }
+        return true
+    }
+
+    private fun uploadKeyFiles() {
+        if (!ble.connected) { toast("Connect to OpenTag first."); return }
+        if (keyFiles.isEmpty()) {
+            toast("Choose your key files first — unfixed-info.bin and locked-secret.bin, or one combined 160-byte retail file.")
+            return
+        }
+        for ((_, bytes) in keyFiles) ble.uploadKeys(bytes)
+    }
+
+    // ---- Wi-Fi provisioning + OTA --------------------------------------------
+
+    private fun saveWifi() {
+        if (!ble.connected) { toast("Connect to OpenTag first."); return }
+        val ssid = findViewById<EditText>(R.id.wifiSsid).text.toString().trim()
+        val pass = findViewById<EditText>(R.id.wifiPass).text.toString()
+        if (ssid.isEmpty()) { toast("Enter a Wi-Fi name first."); return }
+        ble.sendCommand("WIFI:$ssid|$pass")
     }
 
     private fun displayName(uri: Uri): String? = try {
@@ -316,7 +407,24 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     }
 
     override fun onUploadDone(name: String, ok: Boolean) {
-        if (ok) ble.refreshLibrary()
+        if (name == "keys") {
+            if (ok) ble.sendCommand("KEY:STATUS")
+        } else if (ok) {
+            ble.refreshLibrary()
+        }
+    }
+
+    override fun onStatus(line: String) {
+        when {
+            line.startsWith("OK:keys:") ->
+                findViewById<TextView>(R.id.keyState).text =
+                    if (line.contains("ready"))
+                        "Key state: ready — both key files loaded, writes enabled"
+                    else
+                        "Key state: missing or partial — upload both unfixed-info.bin and locked-secret.bin"
+            line.startsWith("OK:keys-cleared") ->
+                findViewById<TextView>(R.id.keyState).text = "Key state: no keys on device"
+        }
     }
 
     // ---- UI helpers ------------------------------------------------------------
@@ -336,7 +444,9 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     private fun updateButtons() {
         val on = ble.connected
         for (id in intArrayOf(R.id.disconnect, R.id.sendNote, R.id.clearNote,
-                               R.id.uploadAll, R.id.refresh, R.id.stopEmu))
+                               R.id.uploadAll, R.id.refresh, R.id.stopEmu,
+                               R.id.uploadKeys, R.id.keyStatusBtn, R.id.forgetKeys,
+                               R.id.wifiSave, R.id.otaCheck, R.id.otaStart))
             findViewById<Button>(id).isEnabled = on
         findViewById<Button>(R.id.connect).isEnabled = !on
     }
@@ -434,6 +544,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     companion object {
         private const val REQ_PERMS = 1
         private const val REQ_FILES = 2
+        private const val REQ_KEYS = 3
         private const val DB_LIMIT = 120   // rows kept in the list at once
         private var db: AmiiboDb? = null
 
