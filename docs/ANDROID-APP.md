@@ -6,7 +6,8 @@ amiibo file dumping and emulation control. The UI is a native replication
 of the [web sync page](../device/web-sync/index.html) — same dark
 mint/violet design, cards, status dot, log console and amiibo database —
 built entirely from platform views and shape drawables (no WebView, no
-libraries).
+libraries). A scroll-capture-style preview of the screen is in
+[`app-ui-preview.png`](app-ui-preview.png) next to this file.
 
 ## What it does
 
