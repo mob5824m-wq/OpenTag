@@ -80,7 +80,9 @@ transmitter coil (⌀ ≤ 40 mm, ferrite-backed) on that mark, wired to a 5 V
 supply, and the docked device charges in place. The mark is centred under
 the docked device's receiver coil as far up the 105 mm panel as it fits,
 but the ~10° lean offsets the two coils by ~15 mm, so expect a gentle
-charge rate rather than full power.
+charge rate rather than full power. A render of both stand engravings
+(wordmark front, ring + bolt back) is in `stand-engravings.png` next to
+this file.
 
 ```
 Qi receiver OUT+ ── D2 (anode→cathode) ── TP4056 VCC (USB-C jack VBUS)
