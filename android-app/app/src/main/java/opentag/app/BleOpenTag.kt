@@ -282,28 +282,30 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
     }
 
     @SuppressLint("MissingPermission")
-    private fun pumpStream() = synchronized(lock) {
-        val ch = dataChar ?: return finishUpload(false, "data characteristic gone")
-        if (streamOff >= streamBytes.size) return  // waiting for OK:ami-saved
-        val n = minOf(CHUNK, streamBytes.size - streamOff)
-        val frame = ByteArray(3 + n)
-        frame[0] = ((streamSeq shr 8) and 0xFF).toByte()
-        frame[1] = (streamSeq and 0xFF).toByte()
-        frame[2] = n.toByte()
-        System.arraycopy(streamBytes, streamOff, frame, 3, n)
-        if (Build.VERSION.SDK_INT >= 33) {
-            gatt?.writeCharacteristic(ch, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-                ?: return finishUpload(false, "disconnected")
-        } else {
-            @Suppress("DEPRECATION")
-            ch.setValue(frame)
-            @Suppress("DEPRECATION")
-            ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            @Suppress("DEPRECATION")
-            if (gatt?.writeCharacteristic(ch) != true) return finishUpload(false, "write failed")
+    private fun pumpStream() {
+        synchronized(lock) {
+            val ch = dataChar ?: return finishUpload(false, "data characteristic gone")
+            if (streamOff >= streamBytes.size) return  // waiting for OK:ami-saved
+            val n = minOf(CHUNK, streamBytes.size - streamOff)
+            val frame = ByteArray(3 + n)
+            frame[0] = ((streamSeq shr 8) and 0xFF).toByte()
+            frame[1] = (streamSeq and 0xFF).toByte()
+            frame[2] = n.toByte()
+            System.arraycopy(streamBytes, streamOff, frame, 3, n)
+            if (Build.VERSION.SDK_INT >= 33) {
+                gatt?.writeCharacteristic(ch, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                    ?: return finishUpload(false, "disconnected")
+            } else {
+                @Suppress("DEPRECATION")
+                ch.setValue(frame)
+                @Suppress("DEPRECATION")
+                ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                @Suppress("DEPRECATION")
+                if (gatt?.writeCharacteristic(ch) != true) return finishUpload(false, "write failed")
+            }
+            streamOff += n
+            streamSeq++
         }
-        streamOff += n
-        streamSeq++
     }
 
     private fun finishUpload(ok: Boolean, why: String) {
@@ -366,6 +368,7 @@ class BleOpenTag(private val ctx: Context, private val listener: Listener) {
                 phase == Phase.WAIT_SAVED && text.startsWith("OK:ami-saved") -> {
                     finishUpload(true, "")
                 }
+                else -> {}
             }
         }
     }
