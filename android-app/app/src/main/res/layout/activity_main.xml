@@ -2,7 +2,10 @@
 <!-- Mirrors the web sync page (device/web-sync/index.html): one scrolling
      column of cards on the dark mint/violet theme. All ids referenced from
      MainActivity.kt are preserved; new ones: stateDot, stateText, clearNote,
-     dbSearch, dbCount, dbList, localEmpty, deviceEmpty. -->
+     dbSearch, dbCount, dbList, localEmpty, deviceEmpty. The three list
+     containers are plain LinearLayouts (ids localList/deviceList/dbList) —
+     rows are added in page flow so the page itself scrolls, like the web
+     page, with no nested scroll areas. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -465,34 +468,29 @@
                     android:enabled="false"/>
             </LinearLayout>
 
-            <FrameLayout
+            <!-- The library rows sit in the page flow, exactly like the web
+                 page's: rows are added to a plain LinearLayout and the page
+                 itself scrolls — no nested scroll containers fighting over
+                 the gesture. -->
+            <LinearLayout
+                android:id="@+id/localList"
                 android:layout_width="match_parent"
-                android:layout_height="268dp"
-                android:layout_marginTop="12dp">
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="12dp"/>
 
-                <ListView
-                    android:id="@+id/localList"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:divider="@android:color/transparent"
-                    android:dividerHeight="8dp"
-                    android:listSelector="@drawable/item_sel"
-                    android:scrollbars="none"
-                    android:overScrollMode="never"/>
-
-                <TextView
-                    android:id="@+id/localEmpty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:gravity="center"
-                    android:text="No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, padded or N2-headered OK), 1024-byte v3 Air Riders dumps, Flipper Zero .nfc, or a .zip containing any of those."
-                    android:textSize="12sp"
-                    android:lineSpacingMultiplier="1.4"
-                    android:textColor="@color/muted"/>
-            </FrameLayout>
+            <TextView
+                android:id="@+id/localEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:gravity="center"
+                android:text="No dumps yet. Accepted: .bin (532/540/572-byte NTAG215 images, padded or N2-headered OK), 1024-byte v3 Air Riders dumps, Flipper Zero .nfc, or a .zip containing any of those."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
 
             <View
                 android:layout_width="match_parent"
@@ -611,34 +609,25 @@
                 android:lineSpacingMultiplier="1.4"
                 android:textColor="@color/muted"/>
 
-            <FrameLayout
+            <LinearLayout
+                android:id="@+id/deviceList"
                 android:layout_width="match_parent"
-                android:layout_height="222dp"
-                android:layout_marginTop="12dp">
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="12dp"/>
 
-                <ListView
-                    android:id="@+id/deviceList"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:divider="@android:color/transparent"
-                    android:dividerHeight="8dp"
-                    android:listSelector="@drawable/item_sel"
-                    android:scrollbars="none"
-                    android:overScrollMode="never"/>
-
-                <TextView
-                    android:id="@+id/deviceEmpty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:gravity="center"
-                    android:text="Device library is empty — sync some dumps, then browse them in the Amiibo library menu (or right here on the Mini)."
-                    android:textSize="12sp"
-                    android:lineSpacingMultiplier="1.4"
-                    android:textColor="@color/muted"/>
-            </FrameLayout>
+            <TextView
+                android:id="@+id/deviceEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:gravity="center"
+                android:text="Device library is empty — sync some dumps, then browse them in the Amiibo library menu (or right here on the Mini)."
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@color/muted"/>
 
             <TextView
                 android:layout_width="match_parent"
@@ -717,16 +706,12 @@
                 android:textSize="12sp"
                 android:textColor="@color/muted"/>
 
-            <ListView
+            <LinearLayout
                 android:id="@+id/dbList"
                 android:layout_width="match_parent"
-                android:layout_height="336dp"
-                android:layout_marginTop="12dp"
-                android:divider="@android:color/transparent"
-                android:dividerHeight="8dp"
-                android:listSelector="@drawable/item_sel"
-                android:scrollbars="none"
-                android:overScrollMode="never"/>
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="12dp"/>
         </LinearLayout>
 
         <!-- ======================= signing keys ======================= -->

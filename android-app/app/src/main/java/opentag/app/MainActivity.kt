@@ -13,13 +13,12 @@ import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.method.ScrollingMovementMethod
+import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.ListView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
@@ -79,8 +78,11 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         findViewById<Button>(R.id.inspectTag).setOnClickListener { ble.sendCommand("TAG:INSPECT") }
 
         findViewById<TextView>(R.id.log).movementMethod = ScrollingMovementMethod()
-        findViewById<ListView>(R.id.localList).setEmptyView(findViewById(R.id.localEmpty))
-        findViewById<ListView>(R.id.deviceList).setEmptyView(findViewById(R.id.deviceEmpty))
+
+        // the three lists render into plain LinearLayouts in the page flow —
+        // the page itself scrolls (like the web page), no nested scrollers
+        renderLocal()
+        renderDevice()
 
         // database browser — same data the dump matching uses, no connection
         findViewById<EditText>(R.id.dbSearch).addTextChangedListener(object : TextWatcher {
@@ -105,21 +107,6 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         findViewById<Button>(R.id.otaCheck).setOnClickListener { ble.sendCommand("OTA:STATUS") }
         findViewById<Button>(R.id.otaStart).setOnClickListener { ble.sendCommand("OTA:START") }
 
-        findViewById<ListView>(R.id.localList).apply {
-            adapter = localAdapter
-            setOnItemClickListener { _, _, position, _ -> uploadOne(local[position]) }
-            setOnItemLongClickListener { _, _, position, _ ->
-                local.removeAt(position)
-                localAdapter.notifyDataSetChanged()
-                updateButtons()
-                true
-            }
-        }
-        findViewById<ListView>(R.id.deviceList).apply {
-            adapter = deviceAdapter
-            setOnItemClickListener { _, _, position, _ -> deviceItemAction(position) }
-        }
-        findViewById<ListView>(R.id.dbList).adapter = dbAdapter
         updateButtons()
     }
 
@@ -201,7 +188,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             var added = 0
             for (uri in uris) added += importUri(uri)
             runOnUiThread {
-                localAdapter.notifyDataSetChanged()
+                renderLocal()
                 updateButtons()
                 toast("Added $added dump(s)")
             }
@@ -371,9 +358,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
 
     // ---- device library ------------------------------------------------------
 
-    private fun deviceItemAction(position: Int) {
-        if (position !in deviceLib.indices) return
-        val name = deviceLib[position]
+    private fun deviceItemAction(name: String) {
         val meta = db?.matchFilename(name)
         val title = meta?.let { "${it.name} (${it.series})" } ?: name
         val options = arrayOf("Emulate on OpenTag", "Write to NTAG215 (needs keys)",
@@ -418,7 +403,7 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     override fun onDeviceList(names: List<String>) {
         deviceLib.clear()
         deviceLib.addAll(names)
-        deviceAdapter.notifyDataSetChanged()
+        renderDevice()
     }
 
     override fun onUploadDone(name: String, ok: Boolean) {
@@ -498,77 +483,110 @@ class MainActivity : Activity(), BleOpenTag.Listener {
     private fun metaLine(m: AmiiboDb.Meta): String =
         listOf(m.name, m.series, m.type, m.year).filter { it.isNotBlank() }.joinToString(" · ")
 
-    private inner class LocalAdapter : BaseAdapter() {
-        override fun getCount() = local.size
-        override fun getItem(position: Int) = local[position]
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val v = convertView ?: layoutInflater.inflate(R.layout.item_amiibo, parent, false)
-            val d = local[position]
-            v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, d.meta) }
-            v.findViewById<TextView>(R.id.title).text = d.name
-            v.findViewById<TextView>(R.id.meta).text = d.meta?.let { metaLine(it) } ?: "no metadata match"
-            val img = d.image
-            v.findViewById<TextView>(R.id.sub).text =
-                if (img != null) "${img.size} B · UID ${d.uidHex}"
-                else (d.reason ?: "rejected")
-            if (d.valid)
-                bindTag(v, if (d.v3) "V3 · I2C" else "NTAG215",
-                        R.drawable.tag_mint, R.color.mint)
-            else
-                bindTag(v, "INVALID", R.drawable.tag_bad, R.color.bad)
-            return v
-        }
+    // ---- the three lists --------------------------------------------------------
+    // Each list is a plain LinearLayout in the page flow (no ListView, no
+    // fixed-height box): render*() rebuilds its rows and the page ScrollView
+    // does all the scrolling, exactly like the web page — so there is no
+    // nested scroll container fighting the gesture.
+
+    /** dp -> px. */
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** Inflates one amiibo row into the list, with the 8 dp gap and mint
+     *  press ripple the ListView used to provide. */
+    private fun addRow(parent: LinearLayout, bind: (View) -> Unit,
+                       onClick: ((View) -> Unit)? = null,
+                       onLongClick: ((View) -> Boolean)? = null) {
+        val v = layoutInflater.inflate(R.layout.item_amiibo, parent, false)
+        bind(v)
+        v.foreground = getDrawable(R.drawable.item_sel)   // API 23+, minSdk 23
+        if (onClick != null) v.setOnClickListener(onClick)
+        if (onLongClick != null) v.setOnLongClickListener(onLongClick)
+        val lp = v.layoutParams as LinearLayout.LayoutParams
+        lp.bottomMargin = dp(8)
+        parent.addView(v, lp)
     }
 
-    private inner class DeviceAdapter : BaseAdapter() {
-        override fun getCount() = deviceLib.size
-        override fun getItem(position: Int) = deviceLib[position]
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val v = convertView ?: layoutInflater.inflate(R.layout.item_amiibo, parent, false)
-            val name = deviceLib[position]
-            val meta = db?.matchFilename(name)
-            v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, meta) }
-            v.findViewById<TextView>(R.id.title).text = name
-            v.findViewById<TextView>(R.id.meta).text = meta?.let { metaLine(it) } ?: "no metadata match"
-            v.findViewById<TextView>(R.id.sub).visibility = View.GONE
-            bindTag(v, "BIN", R.drawable.tag_violet, R.color.violet)
-            return v
-        }
+    /** Small centered muted line (the "+N more" note). */
+    private fun footnote(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 12f
+        setTextColor(getColor(R.color.muted))
+        gravity = Gravity.CENTER
+        val h = dp(12)
+        setPadding(h, h, h, 0)
     }
 
-    private inner class DbAdapter : BaseAdapter() {
-        private var rows: List<AmiiboDb.Meta> = emptyList()
-        fun setRows(list: List<AmiiboDb.Meta>) { rows = list; notifyDataSetChanged() }
-        override fun getCount() = rows.size
-        override fun getItem(position: Int) = rows[position]
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val v = convertView ?: layoutInflater.inflate(R.layout.item_amiibo, parent, false)
-            val m = rows[position]
-            v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, m) }
-            v.findViewById<TextView>(R.id.title).text = m.name
-            v.findViewById<TextView>(R.id.meta).text =
-                listOf(m.series, m.type, m.year).filter { it.isNotBlank() }.joinToString(" · ")
-            v.findViewById<TextView>(R.id.sub).visibility = View.GONE
-            v.findViewById<TextView>(R.id.tag).visibility = View.GONE
-            return v
+    private fun renderLocal() {
+        val box = findViewById<LinearLayout>(R.id.localList)
+        box.removeAllViews()
+        val shown = minOf(local.size, LOCAL_LIMIT)
+        for (i in 0 until shown) {
+            val d = local[i]
+            addRow(box,
+                bind = { v ->
+                    v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, d.meta) }
+                    v.findViewById<TextView>(R.id.title).text = d.name
+                    v.findViewById<TextView>(R.id.meta).text =
+                        d.meta?.let { metaLine(it) } ?: "no metadata match"
+                    val img = d.image
+                    v.findViewById<TextView>(R.id.sub).text =
+                        if (img != null) "${img.size} B · UID ${d.uidHex}"
+                        else (d.reason ?: "rejected")
+                    if (d.valid)
+                        bindTag(v, if (d.v3) "V3 · I2C" else "NTAG215",
+                                R.drawable.tag_mint, R.color.mint)
+                    else
+                        bindTag(v, "INVALID", R.drawable.tag_bad, R.color.bad)
+                },
+                onClick = { uploadOne(d) },
+                onLongClick = {
+                    local.remove(d)
+                    renderLocal()
+                    updateButtons()
+                    true
+                })
         }
+        if (local.size > LOCAL_LIMIT)
+            box.addView(footnote("Showing the first $LOCAL_LIMIT of ${local.size} — " +
+                                 "Upload all still copies every one of them."))
+        findViewById<TextView>(R.id.localEmpty).visibility =
+            if (local.isEmpty()) View.VISIBLE else View.GONE
     }
 
-    private val localAdapter = LocalAdapter()
-    private val deviceAdapter = DeviceAdapter()
-    private val dbAdapter = DbAdapter()
-
-    // ---- database browser ------------------------------------------------------
-
-    private val dbSearchHandler = Handler(Looper.getMainLooper())
+    private fun renderDevice() {
+        val box = findViewById<LinearLayout>(R.id.deviceList)
+        box.removeAllViews()
+        for (name in deviceLib)
+            addRow(box,
+                bind = { v ->
+                    val meta = db?.matchFilename(name)
+                    v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, meta) }
+                    v.findViewById<TextView>(R.id.title).text = name
+                    v.findViewById<TextView>(R.id.meta).text =
+                        meta?.let { metaLine(it) } ?: "no metadata match"
+                    v.findViewById<TextView>(R.id.sub).visibility = View.GONE
+                    bindTag(v, "BIN", R.drawable.tag_violet, R.color.violet)
+                },
+                onClick = { deviceItemAction(name) })
+        findViewById<TextView>(R.id.deviceEmpty).visibility =
+            if (deviceLib.isEmpty()) View.VISIBLE else View.GONE
+    }
 
     private fun renderDb() {
         val d = db ?: return
         val rows = d.search(findViewById<EditText>(R.id.dbSearch).text.toString(), DB_LIMIT)
-        dbAdapter.setRows(rows)
+        val box = findViewById<LinearLayout>(R.id.dbList)
+        box.removeAllViews()
+        for (m in rows)
+            addRow(box, bind = { v ->
+                v.findViewById<ImageView>(R.id.icon).let { db?.loadInto(it, m) }
+                v.findViewById<TextView>(R.id.title).text = m.name
+                v.findViewById<TextView>(R.id.meta).text =
+                    listOf(m.series, m.type, m.year).filter { it.isNotBlank() }.joinToString(" · ")
+                v.findViewById<TextView>(R.id.sub).visibility = View.GONE
+                v.findViewById<TextView>(R.id.tag).visibility = View.GONE
+            })
         findViewById<TextView>(R.id.dbCount).text =
             if (rows.size >= DB_LIMIT)
                 "showing the first $DB_LIMIT matches of ${d.size} amiibo — keep typing to narrow it down"
@@ -580,7 +598,8 @@ class MainActivity : Activity(), BleOpenTag.Listener {
         private const val REQ_PERMS = 1
         private const val REQ_FILES = 2
         private const val REQ_KEYS = 3
-        private const val DB_LIMIT = 120   // rows kept in the list at once
+        private const val DB_LIMIT = 120   // db browser rows rendered per search
+        private const val LOCAL_LIMIT = 500 // phone-file rows materialized ("Upload all" takes all)
         private var db: AmiiboDb? = null
 
         // ---- dump intake (ported from the web sync page's JS) --------------
