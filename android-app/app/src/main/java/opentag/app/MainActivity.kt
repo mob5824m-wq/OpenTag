@@ -573,6 +573,9 @@ class MainActivity : Activity(), BleOpenTag.Listener {
             if (deviceLib.isEmpty()) View.VISIBLE else View.GONE
     }
 
+    /** Debounce for the database search box (typing pauses 150 ms). */
+    private val dbSearchHandler = Handler(Looper.getMainLooper())
+
     private fun renderDb() {
         val d = db ?: return
         val rows = d.search(findViewById<EditText>(R.id.dbSearch).text.toString(), DB_LIMIT)
